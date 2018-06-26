@@ -1,62 +1,32 @@
 import * as Bigtable from "@google-cloud/bigtable";
 
-export interface Config {
-  projectId: string;
-  keyFilename: string;
-  instanceName: string;
-  tableName: string;
-  columnFamilyName: string;
-}
+import { BigtableClientConfig } from "./interfaces";
+
+const DEFAULT_COLUMN = "value";
+const DEFAULT_MAX_VERSIONS = 1;
 
 export class BigtableClient {
 
-  private config: Config;
-  private table: any;
-  private columnFamily: any;
+  private config: BigtableClientConfig;
+  private instance: any; // TODO: get the correct type of instance
+  private table!: any; // TODO: get the correct type of table
+  private tableTTL!: any;
+
+  private defaultColumn!: string;
   private cfName!: string;
+  private isInitialized: boolean;
 
-  constructor(config: Config) {
+  constructor(config: BigtableClientConfig, instance: any) {
+
+    this.instance = instance;
     this.config = config;
+    this.isInitialized = false;
   }
 
-  public async init() {
-
-    const {
-      projectId,
-      keyFilename,
-      instanceName,
-      tableName,
-      columnFamilyName,
-    } = this.config;
-
-    const bigtable = new Bigtable({
-      projectId,
-      keyFilename,
-    });
-
-    const instance = bigtable.instance(instanceName);
-    const instanceExists = await instance.exists();
-    if (!instanceExists || !instanceExists[0]) {
-      await instance.create();
-    }
-
-    this.table = instance.table(tableName);
-    const tableExists = await this.table.exists();
-    if (!tableExists || !tableExists[0]) {
-      await this.table.create(tableName);
-    }
-
-    this.columnFamily = this.table.family(columnFamilyName);
-    const columnFamilyExists = await this.columnFamily.exists();
-    if (!columnFamilyExists || !columnFamilyExists[0]) {
-      await this.columnFamily.create({
-        versions: 1,
-      });
-    }
-
-    this.cfName = this.columnFamily.familyName;
-  }
-
+  /**
+   * Parsing the stored string, and return as it is if not parsable
+   * @param value
+   */
   private getParsedValue(value: any) {
 
     let result = value;
@@ -64,25 +34,60 @@ export class BigtableClient {
     try {
       result = JSON.parse(value);
     } catch (error) {
-      // DO Nothing
+      // Do Nothing
     }
 
     return result;
   }
 
-  public getCfName(): string {
-    return this.cfName;
+  /**
+   * Generic insert for both row and cell
+   * @param rowKey
+   * @param data
+   */
+  private async insert(rowKey: string, data: any): Promise<any> {
+
+    if (!rowKey || !data) {
+      return;
+    }
+
+    const dataKeys = Object.keys(data);
+    const cleanedData: any = {};
+
+    dataKeys.map((key: string) => {
+
+      const value = data[key];
+      const sanitizedValue = (value && typeof value === "object") ?
+        JSON.stringify(value) : value;
+
+      cleanedData[key] = sanitizedValue || "";
+    });
+
+    return this.table.insert([{
+      key: rowKey,
+      data: {
+        [this.cfName]: cleanedData,
+      },
+    }]);
   }
 
-  public async getRow(key: string): Promise<any> {
+  /**
+   * Generic retrieve for both row and cell
+   * @param rowKey
+   * @param column
+   */
+  public async retrieve(rowKey: string, column?: string): Promise<any> {
 
-    const row = this.table.row(key + "");
+    const columnName = column || this.defaultColumn;
+    const identifier = columnName ? `${this.cfName}:${columnName}` : undefined;
 
-    const result: any = {key};
+    const row = this.table.row(rowKey + "");
+
+    const result: any = {rowKey};
     let rowGet = null;
 
     try {
-      rowGet = await row.get();
+      rowGet = await row.get(identifier);
     } catch (error) {
 
       if (!error.message.startsWith("Unknown row")) {
@@ -100,9 +105,9 @@ export class BigtableClient {
       rowGet[0].data[this.cfName]
     ) {
       const rowData = rowGet[0].data[this.cfName];
-      Object.keys(rowData).forEach((column) => {
-        if (rowData[column] && rowData[column][0] && rowData[column][0].value) {
-          result[column] = this.getParsedValue(rowData[column][0].value);
+      Object.keys(rowData).forEach((columnKey: string) => {
+        if (rowData[columnKey] && rowData[columnKey][0] && rowData[columnKey][0].value) {
+          result[columnKey] = this.getParsedValue(rowData[columnKey][0].value);
         }
       });
     }
@@ -110,20 +115,12 @@ export class BigtableClient {
     return result;
   }
 
-  public deleteCells(key: string, cells: any[]) {
-
-    if (!cells.length) {
-      return;
-    }
-
-    const row = this.table.row(key);
-    const cellIndentifiers = cells
-      .map((cell: string) => `${this.cfName}:${cell}`);
-
-    return row.deleteCells(cellIndentifiers);
-  }
-
-  public async scanCells(filter: any[], etl?: (result: any) => {}): Promise<any> {
+  /**
+   * Scan and return cells based on filters
+   * @param filter
+   * @param etl
+   */
+  private async scanCells(filter: any[], etl?: (result: any) => {}): Promise<any> {
 
     return new Promise((resolve, reject) => {
 
@@ -144,74 +141,139 @@ export class BigtableClient {
     });
   }
 
-  public async insertRow(object: any): Promise<any> {
+  /**
+   * Initialization function for the client
+   */
+  public async init() {
 
-    if (!object.data || typeof object.data !== "object") {
+    if (this.isInitialized) {
       return;
     }
 
-    const data: any = {};
-    const dataKeys = Object.keys(object.data);
+    const {
+      name,
+      columnFamily,
+      defaultColumn = DEFAULT_COLUMN,
+      defaultValue,
+      maxVersions = DEFAULT_MAX_VERSIONS,
+    } = this.config;
 
-    dataKeys.map((key: string) => {
+    this.defaultColumn = defaultColumn;
 
-      const value = object.data[key];
-      const sanitizedValue = (value && typeof value === "object") ?
-        JSON.stringify(value) : value;
+    this.table = this.instance.table(name);
+    const tableExists = await this.table.exists();
+    if (!tableExists || !tableExists[0]) {
+      await this.table.create(name);
+    }
 
-      data[key] = sanitizedValue || "";
-    });
+    const cFamily = this.table.family(columnFamily);
+    const cFamilyExists = await cFamily.exists();
+    if (!cFamilyExists || !cFamilyExists[0]) {
+      await cFamily.create({
+        versions: maxVersions,
+      });
+    }
 
-    return this.table.insert([{
-      key: object.key,
-      data: {
-        [this.cfName]: data,
-      },
-    }]);
+    this.tableTTL = this.instance.table(name);
+    const tableTTLExists = await this.tableTTL.exists();
+    if (!tableTTLExists || !tableTTLExists[0]) {
+      await this.tableTTL.create(name);
+    }
+
+    const cFamilyTTL = this.table.family(columnFamily);
+    const cFamilyTTLExists = await cFamilyTTL.exists();
+    if (!cFamilyTTLExists || !cFamilyTTLExists[0]) {
+      await cFamilyTTL.create({
+        versions: maxVersions,
+      });
+    }
+
+    this.cfName = cFamily.familyName;
+    this.isInitialized = true;
+
+    // TODO: Initialized job for ttl
   }
 
-  public async increaseRow(object: any): Promise<any> {
+  /**
+   * Set or append a value of cell
+   * @param rowKey
+   * @param value
+   * @param ttl
+   * @param column
+   */
+  public set(rowKey: string, value: string, ttl?: boolean, column?: string): Promise<any> {
 
-    const promises: Array<Promise<any>> = [];
-    const row = this.table.row(object.key + "");
+    const data = {
+      [column ? column : this.defaultColumn]: value,
+    };
 
-    if (!object.data) {
-      return;
-    }
-
-    const rules = Object.keys(object.data)
-      .map((key: string) => {
-
-        const value = object.data[key];
-
-        // Only increment if the value is integer, append if non number or decimal
-        const identifier = key.includes("range") ? "append" : "increment";
-
-        return {
-          column: `${this.cfName}:${key}`,
-          [identifier]: identifier === "append" ? `${value},` : (value || 0),
-        };
-      })
-      .filter((rule: any) => rule.increment !== 0);
-
-    if (rules.length > 0) {
-      promises.push(
-        row.createRules(rules),
-      );
-    }
-
-    return Promise.all(promises);
+    return this.insert(rowKey, data);
   }
 
-  public async deleteRow(id: string): Promise<any> {
+  /**
+   * Get a value of cell
+   * @param rowKey
+   * @param column
+   */
+  public async get(rowKey: string, column?: string): Promise<any> {
 
-    const key = id + "";
-
-    if (!key) {
+    if (!rowKey) {
       return;
     }
 
-    const row = this.table.row(key);
+    const columnName = column || this.defaultColumn || "";
+
+    return await this.retrieve(rowKey, columnName);
+  }
+
+  /**
+   * Delete a value of cell
+   * @param rowKey
+   * @param column
+   */
+  public delete(rowKey: string, column?: string) {
+
+    if (!rowKey) {
+      return;
+    }
+
+    const row = this.table.row(rowKey + "");
+    const columnName = column || this.defaultColumn || "";
+
+    return row.deleteCells([`${this.cfName}:${columnName}`]);
+  }
+
+  /**
+   * Set values of multiple column based on objects
+   * @param rowKey
+   * @param columnsObject
+   * @param ttl
+   */
+  public multiSet(rowKey: string, columnsObject: any, ttl) {
+
+    return this.insert(rowKey, columnsObject);
+  }
+
+  /**
+   * Get the whole row values as an object
+   * @param rowKey
+   */
+  public async getRow(rowKey: string): Promise<any> {
+
+    return await this.retrieve(rowKey);
+  }
+
+  /**
+   * Delete the whole row values as an object
+   * @param rowKey
+   */
+  public async deleteRow(rowKey: string): Promise<any> {
+
+    if (!rowKey) {
+      return;
+    }
+
+    const row = this.table.row(rowKey);
 
     return row.delete();
   }

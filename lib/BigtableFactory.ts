@@ -1,61 +1,54 @@
-import { BigtableClient } from "./BigtableClient";
-import { BigtableConfig } from "./interfaces";
+import * as Bigtable from "@google-cloud/bigtable";
 
-export interface TableConfig {
-  tableName: string;
-  columnFamilyName: string;
-}
+import { BigtableClient } from "./BigtableClient";
+import { BigtableFactoryConfig, BigtableClientConfig } from "./interfaces";
+
+const DEFAULT_COLUMN = "value";
+const DEFAULT_MAX_VERSIONS = 1;
 
 export class BigTableFactory {
 
-  private config: BigtableConfig;
-  private cache: any;
+  private config: BigtableFactoryConfig;
+  private instance: any; // TODO: Should get the correct type of instance
 
-  constructor(config: BigtableConfig) {
+  private defaultColumn!: string;
+
+  constructor(config: BigtableFactoryConfig) {
     this.config = config;
-    this.cache = {};
+  }
+
+  public async init() {
+
+    const {
+      projectId,
+      keyFilename,
+      instanceName,
+    } = this.config;
+
+    const bigtable = new Bigtable({
+      projectId,
+      keyFilename,
+    });
+
+    this.instance = bigtable.instance(instanceName);
+    const instanceExists = await this.instance.exists();
+    if (!instanceExists || !instanceExists[0]) {
+      await this.instance.create();
+    }
   }
 
   // Get or initialize BigTableClient based on TableConfig
-  async getOrCreate(tableConfig: TableConfig) {
+  public async get(tableConfig: BigtableClientConfig) {
 
-    const {
-      tableName,
-      columnFamilyName
-    } = tableConfig;
+    const bigtableClient = new BigtableClient(tableConfig, this.instance);
+    await bigtableClient.init();
 
-    if (this.cache[tableName]) {
-      return this.cache[tableName];
-    }
-
-    const config = Object.assign(
-      {},
-      this.config,
-      {
-        tableName,
-        columnFamilyName
-      }
-    );
-
-    const btClient = new BigtableClient(config);
-    await btClient.init();
-
-    this.cache[tableName] = btClient;
-
-    return this.cache[tableName];
+    return bigtableClient;
   }
 
-  close() {
+  public async close() {
 
-    const tableCacheKeys =  Object.keys(this.cache);
-
-    if (tableCacheKeys.length) {
-      tableCacheKeys.map((tableName: string) => {
-        this.cache[tableName].close();
-      });
-    }
-
-    this.cache = {};
+    // TODO: Close instance?
   }
 
 }
