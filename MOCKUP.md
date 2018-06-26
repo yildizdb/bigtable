@@ -24,7 +24,8 @@
         // by encapsulating columnFamilies and multi cell rows, via default values
         // and also adding ttl and metadata with sub millisecond access per default
 
-        const myInstance = await BigtableFactory.get(myTableConfig);
+        const bigtableFactory = new BigtableFactory(config);
+        const myInstance = await bigtableFactory.get(myTableConfig);
 
         const rowKey = "myrowkey";
         const value = "myvalue";
