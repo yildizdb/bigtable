@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2018",
+    "lib": [
+      "es2018"
+    ],
+    "sourceMap": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitAny": false,
+    "strict": true,
+    "outDir": "dist/"
+  },
+  "exclude": [
+    "./coverage",
+    "./node_modules",
+    "./dist"
+  ]
+}
