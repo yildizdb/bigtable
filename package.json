@@ -10,14 +10,14 @@
     "@google-cloud/bigtable": "~0.14.0"
   },
   "devDependencies": {
-    "@types/node": "~10.3.5",
+    "@types/node": "^10.3.6",
     "mocha": "~5.2.0",
     "tslint": "~5.10.0",
     "typescript": "~2.9.2"
   },
   "scripts": {
     "build": "rm -rf dist/ && tsc -p tsconfig.json",
-    "_start": "DEBUG=blockchain:* node dist/index.js",
+    "_start": "DEBUG=bigtable:* ts-node example/index.ts",
     "start": "yarn build && yarn _start",
     "lint": "tslint -c tslint.json '**/*.ts'",
     "test": "yarn build && DEBUG=bigtable:* ./node_modules/.bin/_mocha --recursive --timeout 5000 --exit -R spec test/int"

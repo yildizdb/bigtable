@@ -6,7 +6,7 @@ import { BigtableFactoryConfig, BigtableClientConfig } from "./interfaces";
 const DEFAULT_COLUMN = "value";
 const DEFAULT_MAX_VERSIONS = 1;
 
-export class BigTableFactory {
+export class BigtableFactory {
 
   private config: BigtableFactoryConfig;
   private instance: any; // TODO: Should get the correct type of instance
@@ -40,7 +40,7 @@ export class BigTableFactory {
   // Get or initialize BigTableClient based on TableConfig
   public async get(tableConfig: BigtableClientConfig) {
 
-    const bigtableClient = new BigtableClient(tableConfig, this.instance);
+    const bigtableClient = new BigtableClient(tableConfig, this.instance, this.config.ttlScanIntervalMs);
     await bigtableClient.init();
 
     return bigtableClient;

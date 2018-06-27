@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
     "module": "commonjs",
-    "target": "es2018",
+    "target": "es2017",
     "lib": [
-      "es2018"
+      "es2017"
     ],
     "sourceMap": true,
     "noImplicitReturns": true,

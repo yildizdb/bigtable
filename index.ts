@@ -1,1 +1,1 @@
-export * from "./lib/BigtableClient";
+export { BigtableFactory } from "./lib/BigtableFactory";

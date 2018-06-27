@@ -1,35 +1,34 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const Bigtable = require("@google-cloud/bigtable");
 const BigtableClient_1 = require("./BigtableClient");
-class BigTableFactory {
+const DEFAULT_COLUMN = "value";
+const DEFAULT_MAX_VERSIONS = 1;
+class BigtableFactory {
     constructor(config) {
         this.config = config;
-        this.cache = {};
+    }
+    async init() {
+        const { projectId, keyFilename, instanceName, } = this.config;
+        const bigtable = new Bigtable({
+            projectId,
+            keyFilename,
+        });
+        this.instance = bigtable.instance(instanceName);
+        const instanceExists = await this.instance.exists();
+        if (!instanceExists || !instanceExists[0]) {
+            await this.instance.create();
+        }
     }
     // Get or initialize BigTableClient based on TableConfig
-    async getOrCreate(tableConfig) {
-        const { tableName, columnFamilyName } = tableConfig;
-        if (this.cache[tableName]) {
-            return this.cache[tableName];
-        }
-        const config = Object.assign({}, this.config, {
-            tableName,
-            columnFamilyName
-        });
-        const btClient = new BigtableClient_1.BigtableClient(config);
-        await btClient.init();
-        this.cache[tableName] = btClient;
-        return this.cache[tableName];
+    async get(tableConfig) {
+        const bigtableClient = new BigtableClient_1.BigtableClient(tableConfig, this.instance, this.config.ttlScanIntervalMs);
+        await bigtableClient.init();
+        return bigtableClient;
     }
-    close() {
-        const tableCacheKeys = Object.keys(this.cache);
-        if (tableCacheKeys.length) {
-            tableCacheKeys.map((tableName) => {
-                this.cache[tableName].close();
-            });
-        }
-        this.cache = {};
+    async close() {
+        // TODO: Close instance?
     }
 }
-exports.BigTableFactory = BigTableFactory;
+exports.BigtableFactory = BigtableFactory;
 //# sourceMappingURL=BigtableFactory.js.map

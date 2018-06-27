@@ -1,7 +1,5 @@
 "use strict";
-function __export(m) {
-    for (var p in m) if (!exports.hasOwnProperty(p)) exports[p] = m[p];
-}
 Object.defineProperty(exports, "__esModule", { value: true });
-__export(require("./lib/BigtableClient"));
+var BigtableFactory_1 = require("./lib/BigtableFactory");
+exports.BigtableFactory = BigtableFactory_1.BigtableFactory;
 //# sourceMappingURL=index.js.map
