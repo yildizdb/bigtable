@@ -3,6 +3,8 @@ export interface BigtableFactoryConfig {
   instanceName: string;
   keyFilename: string;
   ttlScanIntervalMs: number;
+  minJitterMs: number;
+  maxJitterMs: number;
 }
 
 export interface BigtableClientConfig {

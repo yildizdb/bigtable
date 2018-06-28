@@ -6,12 +6,25 @@ const DEFAULT_COLUMN = "value";
 const COUNTS = "counts";
 const DEFAULT_MAX_VERSIONS = 1;
 class BigtableClient {
-    constructor(config, instance, intervalInMs) {
+    constructor(config, instance, intervalInMs, minJitterMs, maxJitterMs) {
         this.instance = instance;
         this.intervalInMs = intervalInMs;
+        this.minJitterMs = minJitterMs;
+        this.maxJitterMs = maxJitterMs;
         this.config = config;
         this.isInitialized = false;
     }
+    arrayToChunks(array, size) {
+        const result = [];
+        for (let i = 0; i < array.length; i += size) {
+            const chunk = array.slice(i, i + size);
+            result.push(chunk);
+        }
+        return result;
+    }
+    /**
+     * Main function to run job
+     */
     runJob() {
         this.tov = setTimeout(() => {
             this.deleteExpiredData()
@@ -24,6 +37,9 @@ class BigtableClient {
             });
         }, this.intervalInMs);
     }
+    /**
+     * Delete the expired cells after it is resolved, the job will be run again
+     */
     async deleteExpiredData() {
         const etl = (result) => {
             const ttl = result.data[this.cfNameMetadata].ttl;
@@ -40,13 +56,17 @@ class BigtableClient {
             .filter((metaCell) => !!metaCell)
             .filter((metaCell) => (metaCell.timestamp / 1000) < (Date.now() - (metaCell.value * 1000)))
             .map((metaCell) => metaCell.rowKey);
-        debug(filteredRowKeys);
+        debug("Expired keys found", filteredRowKeys.length);
         const promiseDeletions = filteredRowKeys
             .map((rowKey) => ({ key: rowKey.split("#")[0], column: rowKey.split(":")[1] }))
             .map((cell) => this.delete(cell.key, cell.column));
         const promiseMetadataDeletions = filteredRowKeys
             .map((rowKey) => this.tableMetadata.row(rowKey).delete());
-        await Promise.all(promiseDeletions.concat(promiseMetadataDeletions));
+        const chunksDeletions = this.arrayToChunks(promiseDeletions.concat(promiseMetadataDeletions), 100);
+        // Batching the delete
+        for (const chunksDeletion of chunksDeletions) {
+            await Promise.all(chunksDeletion);
+        }
     }
     /**
      * Parsing the stored string, and return as it is if not parsable
@@ -152,7 +172,7 @@ class BigtableClient {
                 .on("data", (result) => {
                 results.push(etl ? etl(result) : result);
             })
-                .on("end", (result) => {
+                .on("end", () => {
                 resolve(results);
             });
         });
@@ -193,7 +213,16 @@ class BigtableClient {
         this.cfName = cFamily.familyName;
         this.cfNameMetadata = cFamilyMetadata.familyName;
         this.isInitialized = true;
-        this.runJob();
+        if (this.minJitterMs && this.maxJitterMs) {
+            const deltaJitterMs = parseInt((Math.random() * (this.maxJitterMs - this.minJitterMs)).toFixed(0), 10);
+            const startJitterMs = this.minJitterMs + deltaJitterMs;
+            debug("TTL Job started with jitter", startJitterMs);
+            setTimeout(() => this.runJob(), startJitterMs);
+        }
+        else {
+            debug("TTL Job started");
+            this.runJob();
+        }
     }
     /**
      * Add (or minus) the whole row
@@ -243,14 +272,13 @@ class BigtableClient {
             [columnName]: value,
         };
         const ttlRowKey = `${rowKey}#${this.cfName}:${columnName}`;
-        const insertPromises = [
-            this.insert(this.table, this.cfName, rowKey, data),
-        ];
+        const insertPromises = [];
         const rowExists = await this.table.row(rowKey + "").exists();
         if (!rowExists || !rowExists[0]) {
             insertPromises.push(this.tableMetadata.row(COUNTS)
                 .increment(`${this.cfNameMetadata}:${COUNTS}`, 1));
         }
+        insertPromises.push(this.insert(this.table, this.cfName, rowKey, data));
         if (ttl) {
             insertPromises.push(this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, { ttl }));
         }
@@ -297,14 +325,13 @@ class BigtableClient {
         if (!keys.length) {
             return;
         }
-        const insertPromises = [
-            this.insert(this.table, this.cfName, rowKey, columnsObject),
-        ];
+        const insertPromises = [];
         const rowExists = await this.table.row(rowKey + "").exists();
         if (!rowExists || !rowExists[0]) {
             insertPromises.push(this.tableMetadata.row(COUNTS)
                 .increment(`${this.cfNameMetadata}:${COUNTS}`, 1));
         }
+        insertPromises.push(this.insert(this.table, this.cfName, rowKey, columnsObject));
         if (ttl) {
             keys.forEach((columnName) => {
                 const ttlRowKey = `${rowKey}#${this.cfName}:${columnName}`;
@@ -346,14 +373,13 @@ class BigtableClient {
         }
         const columnName = column || this.defaultColumn || "";
         const row = this.table.row(rowKey);
-        const insertPromises = [
-            row.increment(`${this.cfName}:${columnName}`, 1),
-        ];
+        const insertPromises = [];
         const rowExists = await row.exists();
         if (!rowExists || !rowExists[0]) {
             insertPromises.push(this.tableMetadata.row(COUNTS)
                 .increment(`${this.cfNameMetadata}:${COUNTS}`, 1));
         }
+        insertPromises.push(row.increment(`${this.cfName}:${columnName}`, 1));
         if (ttl) {
             const ttlRowKey = `${rowKey}#${this.cfName}:${columnName}`;
             insertPromises.push(this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, { ttl }));
@@ -372,14 +398,13 @@ class BigtableClient {
         }
         const columnName = column || this.defaultColumn || "";
         const row = this.table.row(rowKey);
-        const insertPromises = [
-            row.increment(`${this.cfName}:${columnName}`, -1),
-        ];
+        const insertPromises = [];
         const rowExists = await row.exists();
         if (!rowExists || !rowExists[0]) {
             insertPromises.push(this.tableMetadata.row(COUNTS)
                 .increment(`${this.cfNameMetadata}:${COUNTS}`, 1));
         }
+        insertPromises.push(row.increment(`${this.cfName}:${columnName}`, -1));
         if (ttl) {
             const ttlRowKey = `${rowKey}#${this.cfName}:${columnName}`;
             insertPromises.push(this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, { ttl }));
@@ -412,6 +437,12 @@ class BigtableClient {
         if (this.tov) {
             clearTimeout(this.tov);
         }
+    }
+    cleanUp() {
+        return Promise.all([
+            this.table.delete(),
+            this.tableMetadata.delete(),
+        ]);
     }
 }
 exports.BigtableClient = BigtableClient;

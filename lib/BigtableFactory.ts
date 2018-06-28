@@ -3,15 +3,10 @@ import * as Bigtable from "@google-cloud/bigtable";
 import { BigtableClient } from "./BigtableClient";
 import { BigtableFactoryConfig, BigtableClientConfig } from "./interfaces";
 
-const DEFAULT_COLUMN = "value";
-const DEFAULT_MAX_VERSIONS = 1;
-
 export class BigtableFactory {
 
   private config: BigtableFactoryConfig;
-  private instance: any; // TODO: Should get the correct type of instance
-
-  private defaultColumn!: string;
+  private instance: Bigtable.instance;
 
   constructor(config: BigtableFactoryConfig) {
     this.config = config;
@@ -37,10 +32,15 @@ export class BigtableFactory {
     }
   }
 
-  // Get or initialize BigTableClient based on TableConfig
   public async get(tableConfig: BigtableClientConfig) {
 
-    const bigtableClient = new BigtableClient(tableConfig, this.instance, this.config.ttlScanIntervalMs);
+    const bigtableClient = new BigtableClient(
+      tableConfig,
+      this.instance,
+      this.config.ttlScanIntervalMs,
+      this.config.minJitterMs,
+      this.config.maxJitterMs,
+    );
     await bigtableClient.init();
 
     return bigtableClient;
@@ -48,7 +48,7 @@ export class BigtableFactory {
 
   public async close() {
 
-    // TODO: Close instance?
+    // Do nothing
   }
 
 }

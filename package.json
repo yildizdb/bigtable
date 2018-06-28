@@ -20,6 +20,6 @@
     "_start": "DEBUG=bigtable:* ts-node example/index.ts",
     "start": "yarn build && yarn _start",
     "lint": "tslint -c tslint.json '**/*.ts'",
-    "test": "yarn build && DEBUG=bigtable:* ./node_modules/.bin/_mocha --recursive --timeout 5000 --exit -R spec test/int"
+    "test": "yarn build && DEBUG=bigtable:* ./node_modules/.bin/_mocha --recursive --timeout 30000 --exit -R spec test/int"
   }
 }

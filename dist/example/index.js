@@ -1,14 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const Debug = require("debug");
 const __1 = require("..");
+const debug = Debug("bigtable:example");
 const config = {
-    // projectId: "my-project-1",
-    // instanceName: "my-bigtable-cluster",
-    projectId: "rd-bigdata-prd-v002",
-    instanceName: "plat-ca-1",
-    // keyFilename: "keyfile.json",
-    keyFilename: "/home/rjmasikome/.config/gcloud/application_default_credentials.json",
+    projectId: "my-project-1",
+    instanceName: "my-bigtable-cluster",
+    keyFilename: "keyfile.json",
     ttlScanIntervalMs: 2000,
+    minJitterMs: 2000,
+    maxJitterMs: 5000,
 };
 const myTableConfig = {
     name: "mytable",
@@ -30,7 +31,6 @@ const sleep = (ms) => {
     await bigtableFactory.init();
     const myInstance = await bigtableFactory.get(myTableConfig);
     const rowKey = "myrowkey";
-    const ttl = 15000;
     // when column is null, the default column from the config is used
     // ttl only works on cell level, if a row has no more cells, bigtable will delete the row automatically
     // we create a ${config.name}_metadata table for every table we create
@@ -46,18 +46,20 @@ const sleep = (ms) => {
     await myInstance.increase(rowKey, "numberColumn");
     await myInstance.decrease(rowKey, "numberColumn");
     await myInstance.multiAdd(rowKey, { foo: 1, bar: -5 }, 7);
-    console.log(await myInstance.get(rowKey));
-    console.log(await myInstance.get(rowKey, "numberColumn"));
-    console.log(`ttl ${rowKey} `, await myInstance.ttl(rowKey));
-    console.log(`ttl ${rowKey}:newColumn `, await myInstance.ttl(rowKey, "newColumn"));
-    console.log("waiting...");
+    debug(await myInstance.get(rowKey));
+    debug(await myInstance.get(rowKey, "numberColumn"));
+    debug(`ttl ${rowKey} `, await myInstance.ttl(rowKey));
+    debug(`ttl ${rowKey}:newColumn `, await myInstance.ttl(rowKey, "newColumn"));
+    debug("waiting...");
     await sleep(7000);
-    console.log("counts :", await myInstance.count());
+    await myInstance.set("rowKey1", value);
+    debug("counts :", await myInstance.count());
     await myInstance.delete(rowKey);
     await myInstance.delete(rowKey, "foo");
-    console.log(await myInstance.getRow(rowKey));
+    debug(await myInstance.getRow(rowKey));
     await myInstance.deleteRow(rowKey);
-    console.log("counts :", await myInstance.count());
+    await myInstance.deleteRow("rowKey1");
+    debug("counts :", await myInstance.count());
     myInstance.close();
 })().catch(console.error);
 //# sourceMappingURL=index.js.map

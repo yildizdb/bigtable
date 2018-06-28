@@ -2,8 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const Bigtable = require("@google-cloud/bigtable");
 const BigtableClient_1 = require("./BigtableClient");
-const DEFAULT_COLUMN = "value";
-const DEFAULT_MAX_VERSIONS = 1;
 class BigtableFactory {
     constructor(config) {
         this.config = config;
@@ -20,14 +18,13 @@ class BigtableFactory {
             await this.instance.create();
         }
     }
-    // Get or initialize BigTableClient based on TableConfig
     async get(tableConfig) {
-        const bigtableClient = new BigtableClient_1.BigtableClient(tableConfig, this.instance, this.config.ttlScanIntervalMs);
+        const bigtableClient = new BigtableClient_1.BigtableClient(tableConfig, this.instance, this.config.ttlScanIntervalMs, this.config.minJitterMs, this.config.maxJitterMs);
         await bigtableClient.init();
         return bigtableClient;
     }
     async close() {
-        // TODO: Close instance?
+        // Do nothing
     }
 }
 exports.BigtableFactory = BigtableFactory;

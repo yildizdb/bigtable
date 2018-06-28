@@ -1,10 +1,16 @@
+import * as Debug from "debug";
+
 import {BigtableFactory} from "..";
+
+const debug = Debug("bigtable:example");
 
 const config = {
   projectId: "my-project-1",
   instanceName: "my-bigtable-cluster",
   keyFilename: "keyfile.json",
   ttlScanIntervalMs: 2000,
+  minJitterMs: 2000,
+  maxJitterMs: 5000,
 };
 
 const myTableConfig = {
@@ -33,7 +39,6 @@ const sleep = (ms) => {
     const myInstance = await bigtableFactory.get(myTableConfig);
 
     const rowKey = "myrowkey";
-    const ttl = 15000;
 
     // when column is null, the default column from the config is used
     // ttl only works on cell level, if a row has no more cells, bigtable will delete the row automatically
@@ -56,23 +61,25 @@ const sleep = (ms) => {
 
     await myInstance.multiAdd(rowKey, {foo: 1, bar: -5}, 7);
 
-    console.log(await myInstance.get(rowKey));
-    console.log(await myInstance.get(rowKey, "numberColumn"));
+    debug(await myInstance.get(rowKey));
+    debug(await myInstance.get(rowKey, "numberColumn"));
 
-    console.log(`ttl ${rowKey} `, await myInstance.ttl(rowKey));
-    console.log(`ttl ${rowKey}:newColumn `, await myInstance.ttl(rowKey, "newColumn"));
+    debug(`ttl ${rowKey} `, await myInstance.ttl(rowKey));
+    debug(`ttl ${rowKey}:newColumn `, await myInstance.ttl(rowKey, "newColumn"));
 
-    console.log("waiting...");
+    debug("waiting...");
     await sleep(7000);
 
-    console.log("counts :", await myInstance.count());
+    await myInstance.set("rowKey1", value);
+    debug("counts :", await myInstance.count());
     await myInstance.delete(rowKey);
     await myInstance.delete(rowKey, "foo");
 
-    console.log(await myInstance.getRow(rowKey));
+    debug(await myInstance.getRow(rowKey));
     await myInstance.deleteRow(rowKey);
+    await myInstance.deleteRow("rowKey1");
 
-    console.log("counts :", await myInstance.count());
+    debug("counts :", await myInstance.count());
     myInstance.close();
 
 })().catch(console.error);

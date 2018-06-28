@@ -2,7 +2,6 @@ import * as Bigtable from "@google-cloud/bigtable";
 import * as Debug from "debug";
 
 import { BigtableClientConfig } from "./interfaces";
-import { BigtableFactory } from "..";
 
 const debug = Debug("bigtable:client");
 
@@ -13,25 +12,48 @@ const DEFAULT_MAX_VERSIONS = 1;
 export class BigtableClient {
 
   private config: BigtableClientConfig;
-  private instance: any; // TODO: get the correct type of instance
-  private table!: any; // TODO: get the correct type of table
-  private tableMetadata!: any;
+  private instance: Bigtable.instance;
+  private table!: Bigtable.table;
+  private tableMetadata!: Bigtable.table;
   private tov!: any;
 
   private defaultColumn!: string;
   private cfName!: string;
   private cfNameMetadata!: string;
   private intervalInMs: number;
+  private minJitterMs: number;
+  private maxJitterMs: number;
   private isInitialized: boolean;
 
-  constructor(config: BigtableClientConfig, instance: any, intervalInMs: number) {
+  constructor(
+    config: BigtableClientConfig,
+    instance: Bigtable.instance,
+    intervalInMs: number,
+    minJitterMs: number,
+    maxJitterMs: number,
+  ) {
 
     this.instance = instance;
     this.intervalInMs = intervalInMs;
+    this.minJitterMs = minJitterMs;
+    this.maxJitterMs = maxJitterMs;
     this.config = config;
     this.isInitialized = false;
   }
 
+  private arrayToChunks(array: any[], size: number) {
+
+    const result: any[] = [];
+    for (let i = 0; i < array.length; i += size) {
+        const chunk = array.slice(i, i + size);
+        result.push(chunk);
+    }
+    return result;
+  }
+
+  /**
+   * Main function to run job
+   */
   private runJob() {
 
     this.tov = setTimeout(() => {
@@ -48,6 +70,9 @@ export class BigtableClient {
     }, this.intervalInMs);
   }
 
+  /**
+   * Delete the expired cells after it is resolved, the job will be run again
+   */
   private async deleteExpiredData() {
 
     const etl = (result: any) => {
@@ -69,6 +94,8 @@ export class BigtableClient {
       .filter((metaCell: any) => (metaCell.timestamp / 1000) < (Date.now() - (metaCell.value * 1000)))
       .map((metaCell: any) => metaCell.rowKey);
 
+    debug("Expired keys found", filteredRowKeys.length);
+
     const promiseDeletions = filteredRowKeys
       .map((rowKey: any) => ({key: rowKey.split("#")[0], column: rowKey.split(":")[1]}))
       .map((cell: any) => this.delete(cell.key, cell.column));
@@ -76,7 +103,12 @@ export class BigtableClient {
     const promiseMetadataDeletions = filteredRowKeys
       .map((rowKey: any) => this.tableMetadata.row(rowKey).delete());
 
-    await Promise.all(promiseDeletions.concat(promiseMetadataDeletions));
+    const chunksDeletions = this.arrayToChunks(promiseDeletions.concat(promiseMetadataDeletions), 100);
+
+    // Batching the delete
+    for (const chunksDeletion of chunksDeletions) {
+      await Promise.all(chunksDeletion);
+    }
   }
 
   /**
@@ -204,15 +236,15 @@ export class BigtableClient {
       table.createReadStream({
         filter,
       })
-        .on("error", (error: Error) => {
-          reject(error);
-        })
-        .on("data", (result: any) => {
-          results.push(etl ? etl(result) : result);
-        })
-        .on("end", (result: any) => {
-          resolve(results);
-        });
+      .on("error", (error: Error) => {
+        reject(error);
+      })
+      .on("data", (result: any) => {
+        results.push(etl ? etl(result) : result);
+      })
+      .on("end", () => {
+        resolve(results);
+      });
     });
   }
 
@@ -267,7 +299,15 @@ export class BigtableClient {
     this.cfNameMetadata = cFamilyMetadata.familyName;
     this.isInitialized = true;
 
-    this.runJob();
+    if (this.minJitterMs && this.maxJitterMs) {
+      const deltaJitterMs = parseInt((Math.random() * (this.maxJitterMs - this.minJitterMs)).toFixed(0), 10);
+      const startJitterMs = this.minJitterMs + deltaJitterMs;
+      debug("TTL Job started with jitter", startJitterMs);
+      setTimeout(() => this.runJob(), startJitterMs);
+    } else {
+      debug("TTL Job started");
+      this.runJob();
+    }
   }
 
   /**
@@ -333,9 +373,7 @@ export class BigtableClient {
     };
 
     const ttlRowKey = `${rowKey}#${this.cfName}:${columnName}`;
-    const insertPromises: Array<Promise<any>> = [
-      this.insert(this.table, this.cfName, rowKey, data),
-    ];
+    const insertPromises: Array<Promise<any>> = [];
 
     const rowExists = await this.table.row(rowKey + "").exists();
     if (!rowExists || !rowExists[0]) {
@@ -344,6 +382,10 @@ export class BigtableClient {
           .increment(`${this.cfNameMetadata}:${COUNTS}`, 1),
       );
     }
+
+    insertPromises.push(
+      this.insert(this.table, this.cfName, rowKey, data),
+    );
 
     if (ttl) {
       insertPromises.push(
@@ -407,9 +449,7 @@ export class BigtableClient {
       return;
     }
 
-    const insertPromises: Array<Promise<any>> = [
-      this.insert(this.table, this.cfName, rowKey, columnsObject),
-    ];
+    const insertPromises: Array<Promise<any>> = [];
 
     const rowExists = await this.table.row(rowKey + "").exists();
     if (!rowExists || !rowExists[0]) {
@@ -418,6 +458,10 @@ export class BigtableClient {
           .increment(`${this.cfNameMetadata}:${COUNTS}`, 1),
       );
     }
+
+    insertPromises.push(
+      this.insert(this.table, this.cfName, rowKey, columnsObject),
+    );
 
     if (ttl) {
       keys.forEach((columnName: string) => {
@@ -473,9 +517,7 @@ export class BigtableClient {
     const columnName = column || this.defaultColumn || "";
     const row = this.table.row(rowKey);
 
-    const insertPromises: Array<Promise<any>> = [
-      row.increment(`${this.cfName}:${columnName}`, 1),
-    ];
+    const insertPromises: Array<Promise<any>> = [];
 
     const rowExists = await row.exists();
     if (!rowExists || !rowExists[0]) {
@@ -484,6 +526,10 @@ export class BigtableClient {
           .increment(`${this.cfNameMetadata}:${COUNTS}`, 1),
       );
     }
+
+    insertPromises.push(
+      row.increment(`${this.cfName}:${columnName}`, 1),
+    );
 
     if (ttl) {
       const ttlRowKey = `${rowKey}#${this.cfName}:${columnName}`;
@@ -510,9 +556,7 @@ export class BigtableClient {
     const columnName = column || this.defaultColumn || "";
     const row = this.table.row(rowKey);
 
-    const insertPromises: Array<Promise<any>> = [
-      row.increment(`${this.cfName}:${columnName}`, -1),
-    ];
+    const insertPromises: Array<Promise<any>> = [];
 
     const rowExists = await row.exists();
     if (!rowExists || !rowExists[0]) {
@@ -521,6 +565,10 @@ export class BigtableClient {
           .increment(`${this.cfNameMetadata}:${COUNTS}`, 1),
       );
     }
+
+    insertPromises.push(
+      row.increment(`${this.cfName}:${columnName}`, -1),
+    );
 
     if (ttl) {
       const ttlRowKey = `${rowKey}#${this.cfName}:${columnName}`;
@@ -566,4 +614,12 @@ export class BigtableClient {
       clearTimeout(this.tov);
     }
   }
+
+  public cleanUp() {
+    return Promise.all([
+      this.table.delete(),
+      this.tableMetadata.delete(),
+    ]);
+  }
+
 }
