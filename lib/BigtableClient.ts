@@ -2,6 +2,7 @@ import * as Bigtable from "@google-cloud/bigtable";
 import * as Debug from "debug";
 
 import { BigtableClientConfig } from "./interfaces";
+import { JobTTL } from "./JobTTL";
 
 const debug = Debug("bigtable:client");
 
@@ -14,12 +15,14 @@ export class BigtableClient {
   private config: BigtableClientConfig;
   private instance: Bigtable.instance;
   private table!: Bigtable.table;
-  private tableMetadata!: Bigtable.table;
+  private cfName!: string;
   private tov!: any;
 
+  public tableMetadata!: Bigtable.table;
+  public cfNameMetadata!: string;
+
+  private job: JobTTL;
   private defaultColumn!: string;
-  private cfName!: string;
-  private cfNameMetadata!: string;
   private intervalInMs: number;
   private minJitterMs: number;
   private maxJitterMs: number;
@@ -39,93 +42,7 @@ export class BigtableClient {
     this.maxJitterMs = maxJitterMs;
     this.config = config;
     this.isInitialized = false;
-  }
-
-  private arrayToChunks(array: any[], size: number) {
-
-    const result: any[] = [];
-    for (let i = 0; i < array.length; i += size) {
-        const chunk = array.slice(i, i + size);
-        result.push(chunk);
-    }
-    return result;
-  }
-
-  /**
-   * Main function to run job
-   */
-  private runJob() {
-
-    this.tov = setTimeout(() => {
-
-      this.deleteExpiredData()
-        .then(() => {
-          this.runJob();
-        })
-        .catch((error: Error) => {
-          debug(error);
-          this.runJob();
-        });
-
-    }, this.intervalInMs);
-  }
-
-  /**
-   * Delete the expired cells after it is resolved, the job will be run again
-   */
-  private async deleteExpiredData() {
-
-    const etl = (result: any) => {
-      const ttl: object = result.data[this.cfNameMetadata].ttl;
-
-      if (!ttl) {
-        return;
-      }
-
-      return {
-        rowKey: result.id,
-        value: ttl[0].value,
-        timestamp: ttl[0].timestamp,
-      };
-    };
-
-    const filteredRowKeys = (await this.scanCells(this.tableMetadata, [], etl))
-      .filter((metaCell: any) => !!metaCell)
-      .filter((metaCell: any) => (metaCell.timestamp / 1000) < (Date.now() - (metaCell.value * 1000)))
-      .map((metaCell: any) => metaCell.rowKey);
-
-    debug("Expired keys found", filteredRowKeys.length);
-
-    const promiseDeletions = filteredRowKeys
-      .map((rowKey: any) => ({key: rowKey.split("#")[0], column: rowKey.split(":")[1]}))
-      .map((cell: any) => this.delete(cell.key, cell.column));
-
-    const promiseMetadataDeletions = filteredRowKeys
-      .map((rowKey: any) => this.tableMetadata.row(rowKey).delete());
-
-    const chunksDeletions = this.arrayToChunks(promiseDeletions.concat(promiseMetadataDeletions), 100);
-
-    // Batching the delete
-    for (const chunksDeletion of chunksDeletions) {
-      await Promise.all(chunksDeletion);
-    }
-  }
-
-  /**
-   * Parsing the stored string, and return as it is if not parsable
-   * @param value
-   */
-  private getParsedValue(value: any) {
-
-    let result = value;
-
-    try {
-      result = JSON.parse(value);
-    } catch (error) {
-      // Do Nothing
-    }
-
-    return result;
+    this.job = new JobTTL(this, this.intervalInMs);
   }
 
   /**
@@ -133,7 +50,7 @@ export class BigtableClient {
    * @param rowKey
    * @param data
    */
-  private async insert(table: any, cfName: string, rowKey: string, data: any): Promise<any> {
+  private async insert(table: Bigtable.table, cfName: string, rowKey: string, data: any): Promise<any> {
 
     if (!table || !rowKey || !data) {
       return;
@@ -157,6 +74,23 @@ export class BigtableClient {
         [cfName]: cleanedData,
       },
     }]);
+  }
+
+  /**
+   * Parsing the stored string, and return as it is if not parsable
+   * @param value
+   */
+  private getParsedValue(value: any) {
+
+    let result = value;
+
+    try {
+      result = JSON.parse(value);
+    } catch (error) {
+      // Do Nothing
+    }
+
+    return result;
   }
 
   /**
@@ -224,10 +158,11 @@ export class BigtableClient {
 
   /**
    * Scan and return cells based on filters
+   * @param table
    * @param filter
    * @param etl
    */
-  private async scanCells(table: any, filter: any[], etl?: (result: any) => any): Promise<any> {
+  public async scanCells(table: Bigtable.table, filter: any[], etl?: (result: any) => any): Promise<any> {
 
     return new Promise((resolve, reject) => {
 
@@ -240,7 +175,13 @@ export class BigtableClient {
         reject(error);
       })
       .on("data", (result: any) => {
-        results.push(etl ? etl(result) : result);
+        if (etl) {
+          if (etl(result)) {
+            results.push(etl(result));
+          }
+        } else {
+          results.push(result);
+        }
       })
       .on("end", () => {
         resolve(results);
@@ -302,11 +243,11 @@ export class BigtableClient {
     if (this.minJitterMs && this.maxJitterMs) {
       const deltaJitterMs = parseInt((Math.random() * (this.maxJitterMs - this.minJitterMs)).toFixed(0), 10);
       const startJitterMs = this.minJitterMs + deltaJitterMs;
-      debug("TTL Job started with jitter", startJitterMs);
-      setTimeout(() => this.runJob(), startJitterMs);
+      debug("TTL Job started with jitter %s ms", startJitterMs);
+      setTimeout(() => this.job.run(), startJitterMs);
     } else {
       debug("TTL Job started");
-      this.runJob();
+      this.job.run();
     }
   }
 
@@ -610,9 +551,7 @@ export class BigtableClient {
   }
 
   public close() {
-    if (this.tov) {
-      clearTimeout(this.tov);
-    }
+    this.job.close();
   }
 
   public cleanUp() {
