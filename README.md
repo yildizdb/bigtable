@@ -1,6 +1,6 @@
 # bigtable
 
-`yarn add bigtable`
+`yarn add bigtable-client`
 
 ## Intro
 
@@ -34,6 +34,7 @@ configuration to connect to your Bigtable instance.
 NOTE: If the instance you describe does not exist, it will be created.
 
 ```javascript
+const {BigtableFactory} = require("bigtable-client");
 const bigtableFactory = new BigtableFactory({
 
   projectId: "my-project-1", // -> see @google-cloud/bigtable configuration

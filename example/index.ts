@@ -1,6 +1,6 @@
 import * as Debug from "debug";
 
-import {BigtableFactory} from "..";
+import BigtableFactory from "..";
 
 const debug = Debug("bigtable:example");
 
