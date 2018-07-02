@@ -1,4 +1,4 @@
-# bigtable
+# bigtable-client
 
 `yarn add bigtable-client`
 
