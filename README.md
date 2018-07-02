@@ -19,6 +19,12 @@ Additionally the setup and all operation (except for scan) are optimized for sub
 applications based on this Bigtable. This client is not ment to be used for analytical purposes, although
 it is fairly possible through scan operations.
 
+## Before you get started
+
+Make sure to follow the setup described [here](https://github.com/googleapis/nodejs-bigtable#before-you-begin).
+You will need a Google Cloud Project with enabled billing, as well as a
+setup authentication flow for this client to work.
+
 ## Using
 
 Using it is fairly simple:
@@ -106,3 +112,7 @@ You can find additional implementation examples here:
 # License
 
 License is MIT
+
+# Disclaimer
+
+This project is not associated with Google.
