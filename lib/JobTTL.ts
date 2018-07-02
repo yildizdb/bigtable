@@ -1,7 +1,7 @@
 import { BigtableClient } from "./BigtableClient";
 import * as Debug from "debug";
 
-const debug = Debug("bigtable:jobttl");
+const debug = Debug("yildiz:bigtable:jobttl");
 
 export class JobTTL {
 
@@ -10,7 +10,6 @@ export class JobTTL {
   private tov: any;
 
   constructor(btClient: BigtableClient, intervalInMs: number) {
-
     this.btClient = btClient;
     this.intervalInMs = intervalInMs;
   }
@@ -67,7 +66,7 @@ export class JobTTL {
       return result.id;
     };
 
-    const filteredRowKeys = await this.btClient.scanCells(this.btClient.tableMetadata, [], etl);
+    const filteredRowKeys = await this.btClient.scanCellsInternal(this.btClient.tableMetadata, [], etl);
 
     debug("Expired keys found", filteredRowKeys.length);
 
@@ -98,6 +97,7 @@ export class JobTTL {
 
   public close() {
     if (this.tov) {
+      debug("Stopping job..");
       clearTimeout(this.tov);
     }
   }

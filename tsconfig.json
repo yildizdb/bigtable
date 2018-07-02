@@ -10,7 +10,8 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitAny": false,
     "strict": true,
-    "outDir": "dist/"
+    "outDir": "dist/",
+    "declaration": true
   },
   "exclude": [
     "./coverage",

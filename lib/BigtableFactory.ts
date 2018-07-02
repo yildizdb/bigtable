@@ -1,15 +1,20 @@
 import * as Bigtable from "@google-cloud/bigtable";
+import * as Debug from "debug";
 
 import { BigtableClient } from "./BigtableClient";
 import { BigtableFactoryConfig, BigtableClientConfig } from "./interfaces";
+
+const debug = Debug("yildiz:bigtable:factory");
 
 export class BigtableFactory {
 
   private config: BigtableFactoryConfig;
   private instance: Bigtable.instance;
+  private instances: BigtableClient[];
 
   constructor(config: BigtableFactoryConfig) {
     this.config = config;
+    this.instances = [];
   }
 
   public async init() {
@@ -28,7 +33,11 @@ export class BigtableFactory {
     this.instance = bigtable.instance(instanceName);
     const instanceExists = await this.instance.exists();
     if (!instanceExists || !instanceExists[0]) {
+      debug("Instance", instanceName, "does not exist, creating..");
       await this.instance.create();
+      debug("Instance", instanceName, "created.");
+    } else {
+      debug("Instance", instanceName, "already exists.");
     }
   }
 
@@ -41,14 +50,17 @@ export class BigtableFactory {
       this.config.minJitterMs,
       this.config.maxJitterMs,
     );
-    await bigtableClient.init();
 
+    await bigtableClient.init();
+    this.instances.push(bigtableClient);
+
+    debug("Created new client instance for tableConfig:", tableConfig);
     return bigtableClient;
   }
 
-  public async close() {
-
-    // Do nothing
+  public close() {
+    debug("Closing all known instances", this.instances.length);
+    this.instances.forEach((instance) => instance.close);
+    this.instances = [];
   }
-
 }

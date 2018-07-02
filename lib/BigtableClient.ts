@@ -4,9 +4,13 @@ import * as Debug from "debug";
 import { BigtableClientConfig } from "./interfaces";
 import { JobTTL } from "./JobTTL";
 
-const debug = Debug("bigtable:client");
+const debug = Debug("yildiz:bigtable:client");
 
+const DEFAULT_TTL_SCAN_INTERVAL_MS = 5000;
+const DEFAULT_MIN_JITTER_MS = 2000;
+const DEFAULT_MAX_JITTER_MS = 30000;
 const DEFAULT_COLUMN = "value";
+const DEFAULT_COLUMN_FAMILY = "default";
 const COUNTS = "counts";
 const DEFAULT_MAX_VERSIONS = 1;
 
@@ -37,9 +41,9 @@ export class BigtableClient {
   ) {
 
     this.instance = instance;
-    this.intervalInMs = intervalInMs;
-    this.minJitterMs = minJitterMs;
-    this.maxJitterMs = maxJitterMs;
+    this.intervalInMs = intervalInMs || DEFAULT_TTL_SCAN_INTERVAL_MS;
+    this.minJitterMs = minJitterMs || DEFAULT_MIN_JITTER_MS;
+    this.maxJitterMs = maxJitterMs || DEFAULT_MAX_JITTER_MS;
     this.config = config;
     this.isInitialized = false;
     this.job = new JobTTL(this, this.intervalInMs);
@@ -98,7 +102,8 @@ export class BigtableClient {
    * @param rowKey
    * @param column
    */
-  public async retrieve(table: any, cfName: string, rowKey: string, column?: string, complete?: boolean): Promise<any> {
+  private async retrieve(table: any, cfName: string, rowKey: string, column?: string, complete?: boolean):
+    Promise<any> {
 
     if (!table || !rowKey) {
       return;
@@ -162,8 +167,9 @@ export class BigtableClient {
    * @param filter
    * @param etl
    */
-  public async scanCells(table: Bigtable.table, filter: any[], etl?: (result: any) => any): Promise<any> {
+  public async scanCellsInternal(table: Bigtable.table, filter: any[], etl?: (result: any) => any): Promise<any> {
 
+    debug("Scanning cells via filter for", this.config.name);
     return new Promise((resolve, reject) => {
 
       const results: any[] = [];
@@ -189,6 +195,10 @@ export class BigtableClient {
     });
   }
 
+  public async scanCells(filter: any[], etl?: (result: any) => any): Promise<any> {
+    return this.scanCellsInternal(this.table, filter, etl);
+  }
+
   /**
    * Initialization function for the client
    */
@@ -198,11 +208,12 @@ export class BigtableClient {
       return;
     }
 
+    debug("Initialising..", this.config.name);
+
     const {
       name,
-      columnFamily,
+      columnFamily = DEFAULT_COLUMN_FAMILY,
       defaultColumn = DEFAULT_COLUMN,
-      defaultValue,
       maxVersions = DEFAULT_MAX_VERSIONS,
     } = this.config;
 
@@ -249,6 +260,8 @@ export class BigtableClient {
       debug("TTL Job started");
       this.job.run();
     }
+
+    debug("Initialised.", this.config.name);
   }
 
   /**
@@ -258,6 +271,7 @@ export class BigtableClient {
    */
   public multiAdd(rowKey: string, data: any, ttl?: number): Promise<any> | void {
 
+    debug("Multi-adding cells for", this.config.name, rowKey, ttl);
     const row = this.table.row(rowKey + "");
     const insertPromises: Array<Promise<any>> = [];
 
@@ -308,6 +322,7 @@ export class BigtableClient {
    */
   public async set(rowKey: string, value: string, ttl?: number, column?: string): Promise<any> {
 
+    debug("Setting cell for", this.config.name, rowKey, column, value, ttl);
     const columnName = column ? column : this.defaultColumn;
     const data = {
       [columnName]: value,
@@ -348,8 +363,8 @@ export class BigtableClient {
       return;
     }
 
+    debug("Getting cell for", this.config.name, rowKey, column);
     const columnName = column || this.defaultColumn || "";
-
     return this.retrieve(this.table, this.cfName, rowKey, columnName);
   }
 
@@ -359,6 +374,8 @@ export class BigtableClient {
    * @param column
    */
   public async delete(rowKey: string, column?: string) {
+
+    debug("Deleting for", this.config.name, rowKey, column);
 
     if (!rowKey) {
       return;
@@ -383,6 +400,8 @@ export class BigtableClient {
    * @param ttl
    */
   public async multiSet(rowKey: string, columnsObject: any, ttl?: number) {
+
+    debug("Running multi-set for", this.config.name, rowKey, ttl);
 
     const keys = Object.keys(columnsObject);
 
@@ -421,7 +440,7 @@ export class BigtableClient {
    * @param rowKey
    */
   public async getRow(rowKey: string): Promise<any> {
-
+    debug("Getting row for", this.config.name, rowKey);
     return await this.retrieve(this.table, this.cfName, rowKey);
   }
 
@@ -434,6 +453,8 @@ export class BigtableClient {
     if (!rowKey) {
       return;
     }
+
+    debug("Deleting row for", this.config.name, rowKey);
 
     const row = this.table.row(rowKey);
 
@@ -454,6 +475,8 @@ export class BigtableClient {
     if (!rowKey) {
       return;
     }
+
+    debug("Increasing for", this.config.name, rowKey, column, ttl);
 
     const columnName = column || this.defaultColumn || "";
     const row = this.table.row(rowKey);
@@ -494,6 +517,8 @@ export class BigtableClient {
       return;
     }
 
+    debug("Decreasing for", this.config.name, rowKey, column, ttl);
+
     const columnName = column || this.defaultColumn || "";
     const row = this.table.row(rowKey);
 
@@ -525,7 +550,7 @@ export class BigtableClient {
    * Get a count of a table
    */
   public async count(): Promise<any> {
-
+    debug("Checking count for", this.config.name);
     const counts = await this.retrieve(this.tableMetadata, this.cfNameMetadata, COUNTS, COUNTS);
     return counts || 0;
   }
@@ -536,6 +561,8 @@ export class BigtableClient {
    * @param column
    */
   public async ttl(rowKey: string, column?: string): Promise<any> {
+
+    debug("Checking ttl for", this.config.name, rowKey, column);
 
     const columnName = column || this.defaultColumn || "";
     const ttlRowKey = `${rowKey}#${this.cfName}:${columnName}`;
@@ -551,10 +578,12 @@ export class BigtableClient {
   }
 
   public close() {
+    debug("Closing job..", this.config.name);
     this.job.close();
   }
 
   public cleanUp() {
+    debug("Cleaning up, deleting table and metadata..", this.config.name);
     return Promise.all([
       this.table.delete(),
       this.tableMetadata.delete(),

@@ -1,23 +1,26 @@
 {
   "name": "bigtable",
-  "version": "0.0.1",
-  "description": "Convenience wrapper around @google-cloud/bigtable",
+  "version": "0.15.0",
+  "description": "Convenience wrapper, batteries included, for @google-cloud/bigtable",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "repository": "git@github.com:knamp/static-styles.git",
   "author": "Christian Froehlingsdorf <info@5cf.de>",
   "license": "MIT",
   "dependencies": {
-    "@google-cloud/bigtable": "~0.14.0"
+    "@google-cloud/bigtable": "~0.15.0",
+    "debug": "~3.1.0"
   },
   "devDependencies": {
-    "@types/node": "^10.3.6",
+    "@types/node": "~10.5.1",
     "mocha": "~5.2.0",
     "tslint": "~5.10.0",
     "typescript": "~2.9.2"
   },
   "scripts": {
-    "build": "rm -rf dist/ && tsc -p tsconfig.json",
-    "_start": "DEBUG=bigtable:* ts-node example/index.ts",
+    "prepublishOnly": "yarn build",
+    "build": "yarn lint && rm -rf dist/ && tsc -p tsconfig.json",
+    "_start": "DEBUG=yildiz:bigtable:* node dist/example/index.js",
     "start": "yarn build && yarn _start",
     "lint": "tslint -c tslint.json '**/*.ts'",
     "test": "yarn build && DEBUG=bigtable:* ./node_modules/.bin/_mocha --recursive --timeout 30000 --exit -R spec test/int"

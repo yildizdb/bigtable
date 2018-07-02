@@ -17,7 +17,6 @@ const myTableConfig = {
   name: "mytable",
   columnFamily: "myfamily",
   defaultColumn: "default",
-  defaultValue: "",
   maxVersions: 1,
 };
 
@@ -80,6 +79,6 @@ const sleep = (ms) => {
     await myInstance.deleteRow("rowKey1");
 
     debug("counts :", await myInstance.count());
-    myInstance.close();
+    bigtableFactory.close();
 
 })().catch(console.error);
