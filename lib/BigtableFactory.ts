@@ -60,7 +60,7 @@ export class BigtableFactory {
 
   public close() {
     debug("Closing all known instances", this.instances.length);
-    this.instances.forEach((instance) => instance.close);
+    this.instances.forEach((instance) => instance.close());
     this.instances = [];
   }
 }

@@ -156,8 +156,7 @@ describe(testName, () => {
 
     it("should be able to delete expired data based on TTL Job", async () => {
       const retrievedValue = await btClient.get(rowKey, "numberColumn");
-
-      assert.equal(retrievedValue, 1);
+      assert.equal(retrievedValue, null);
     });
 
     it("should wait for 4 seconds", (done) => {
