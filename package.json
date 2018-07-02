@@ -1,5 +1,5 @@
 {
-  "name": "bigtable",
+  "name": "bigtable-client",
   "version": "0.15.0",
   "description": "Convenience wrapper, batteries included, for @google-cloud/bigtable",
   "main": "dist/index.js",
