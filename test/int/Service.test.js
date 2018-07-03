@@ -146,7 +146,7 @@ describe(testName, () => {
 
       await btClient.set(rowKey, value, 9, "newColumn");
       await btClient.multiSet(rowKey, {testColumn: "hello", anotherColumn: "yes"}, 8);
-      await btClient.increase(rowKey, "numberColumn", 3);
+      await btClient.increase(rowKey, "numberColumn", 2);
       await btClient.multiAdd(rowKey, {foo: 1, bar: -5}, 7);
     });
 

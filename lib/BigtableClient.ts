@@ -1,7 +1,7 @@
 import * as Bigtable from "@google-cloud/bigtable";
 import * as Debug from "debug";
 
-import { BigtableClientConfig } from "./interfaces";
+import { BigtableClientConfig, RuleColumnFamily } from "./interfaces";
 import { JobTTL } from "./JobTTL";
 
 const debug = Debug("yildiz:bigtable:client");
@@ -215,9 +215,21 @@ export class BigtableClient {
       columnFamily = DEFAULT_COLUMN_FAMILY,
       defaultColumn = DEFAULT_COLUMN,
       maxVersions = DEFAULT_MAX_VERSIONS,
+      maxAgeSecond,
     } = this.config;
 
     this.defaultColumn = defaultColumn;
+
+    const rule: RuleColumnFamily = {
+      versions: maxVersions,
+    };
+
+    if (maxAgeSecond) {
+      rule.age = {
+        seconds: maxAgeSecond,
+      };
+      rule.union = true;
+    }
 
     this.table = this.instance.table(name);
     const tableExists = await this.table.exists();
@@ -229,7 +241,7 @@ export class BigtableClient {
     const cFamilyExists = await cFamily.exists();
     if (!cFamilyExists || !cFamilyExists[0]) {
       await cFamily.create({
-        versions: maxVersions,
+        rule,
       });
     }
 
@@ -243,19 +255,19 @@ export class BigtableClient {
     const cFamilyMetadataExists = await cFamilyMetadata.exists();
     if (!cFamilyMetadataExists || !cFamilyMetadataExists[0]) {
       await cFamilyMetadata.create({
-        versions: maxVersions,
+        rule,
       });
     }
 
-    this.cfName = cFamily.familyName;
-    this.cfNameMetadata = cFamilyMetadata.familyName;
+    this.cfName = cFamily.id;
+    this.cfNameMetadata = cFamilyMetadata.id;
     this.isInitialized = true;
 
     if (this.minJitterMs && this.maxJitterMs) {
       const deltaJitterMs = parseInt((Math.random() * (this.maxJitterMs - this.minJitterMs)).toFixed(0), 10);
       const startJitterMs = this.minJitterMs + deltaJitterMs;
       debug("TTL Job started with jitter %s ms", startJitterMs);
-      setTimeout(() => this.job.run(), startJitterMs);
+      this.tov = setTimeout(() => this.job.run(), startJitterMs);
     } else {
       debug("TTL Job started");
       this.job.run();
@@ -338,6 +350,8 @@ export class BigtableClient {
           .increment(`${this.cfNameMetadata}:${COUNTS}`, 1),
       );
     }
+
+    debug(this.cfName);
 
     insertPromises.push(
       this.insert(this.table, this.cfName, rowKey, data),
@@ -578,7 +592,13 @@ export class BigtableClient {
   }
 
   public close() {
+
     debug("Closing job..", this.config.name);
+
+    if (this.tov) {
+      clearTimeout(this.tov);
+    }
+
     this.job.close();
   }
 

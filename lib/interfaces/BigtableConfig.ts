@@ -13,4 +13,13 @@ export interface BigtableClientConfig {
   defaultColumn: string;
   defaultValue?: string;
   maxVersions?: number;
+  maxAgeSecond?: number;
+}
+
+export interface RuleColumnFamily {
+  versions: number;
+  age?: {
+    seconds: number;
+  };
+  union?: boolean;
 }

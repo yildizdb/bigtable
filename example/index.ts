@@ -2,7 +2,7 @@ import * as Debug from "debug";
 
 import BigtableFactory from "..";
 
-const debug = Debug("bigtable:example");
+const debug = Debug("yildiz:bigtable:example");
 
 const config = {
   projectId: "my-project-1",
@@ -58,7 +58,7 @@ const sleep = (ms: any) => {
     await myInstance.increase(rowKey, "numberColumn");
     await myInstance.decrease(rowKey, "numberColumn");
 
-    await myInstance.multiAdd(rowKey, {foo: 1, bar: -5}, 7);
+    await myInstance.multiAdd(rowKey, {foo: 1, bar: -5}, 5);
 
     debug(await myInstance.get(rowKey));
     debug(await myInstance.get(rowKey, "numberColumn"));
