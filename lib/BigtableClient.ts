@@ -351,8 +351,6 @@ export class BigtableClient {
       );
     }
 
-    debug(this.cfName);
-
     insertPromises.push(
       this.insert(this.table, this.cfName, rowKey, data),
     );
