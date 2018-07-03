@@ -1,6 +1,6 @@
 {
   "name": "bigtable-client",
-  "version": "0.15.2",
+  "version": "0.15.3",
   "description": "Convenience wrapper, batteries included, for @google-cloud/bigtable",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,7 +12,7 @@
     "debug": "~3.1.0"
   },
   "devDependencies": {
-    "@types/debug": "^0.0.30",
+    "@types/debug": "~0.0.30",
     "@types/node": "~10.5.1",
     "mocha": "~5.2.0",
     "tslint": "~5.10.0",
