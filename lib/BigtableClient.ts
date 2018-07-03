@@ -17,12 +17,12 @@ const DEFAULT_MAX_VERSIONS = 1;
 export class BigtableClient {
 
   private config: BigtableClientConfig;
-  private instance: Bigtable.instance;
-  private table!: Bigtable.table;
+  private instance: Bigtable.Instance;
+  private table!: Bigtable.Table;
   private cfName!: string;
   private tov!: any;
 
-  public tableMetadata!: Bigtable.table;
+  public tableMetadata!: Bigtable.Table;
   public cfNameMetadata!: string;
 
   private job: JobTTL;
@@ -34,7 +34,7 @@ export class BigtableClient {
 
   constructor(
     config: BigtableClientConfig,
-    instance: Bigtable.instance,
+    instance: Bigtable.Instance,
     intervalInMs: number,
     minJitterMs: number,
     maxJitterMs: number,
@@ -54,7 +54,7 @@ export class BigtableClient {
    * @param rowKey
    * @param data
    */
-  private async insert(table: Bigtable.table, cfName: string, rowKey: string, data: any): Promise<any> {
+  private async insert(table: Bigtable.Table, cfName: string, rowKey: string, data: any): Promise<any> {
 
     if (!table || !rowKey || !data) {
       return;
@@ -167,7 +167,7 @@ export class BigtableClient {
    * @param filter
    * @param etl
    */
-  public async scanCellsInternal(table: Bigtable.table, filter: any[], etl?: (result: any) => any): Promise<any> {
+  public async scanCellsInternal(table: Bigtable.Table, filter: any[], etl?: (result: any) => any): Promise<any> {
 
     debug("Scanning cells via filter for", this.config.name);
     return new Promise((resolve, reject) => {

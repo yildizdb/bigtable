@@ -49,7 +49,7 @@ export class JobTTL {
   private async deleteExpiredData() {
 
     const etl = (result: any) => {
-      const ttl: object = result.data[this.btClient.cfNameMetadata].ttl;
+      const ttl: any = result.data[this.btClient.cfNameMetadata].ttl;
 
       if (!ttl) {
         return null;
@@ -86,7 +86,7 @@ export class JobTTL {
               this.btClient.tableMetadata.row(rowKeyTTL).delete(),
               this.btClient.delete(key, column),
             ];
-          }).reduce((prev, next) => prev.concat(next), []),
+          }).reduce((prev: any, next: any) => prev.concat(next), []),
         );
         debug("Deleted %s keys", chunksDeletion.length);
       } catch (error) {

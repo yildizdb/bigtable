@@ -9,7 +9,7 @@ const debug = Debug("yildiz:bigtable:factory");
 export class BigtableFactory {
 
   private config: BigtableFactoryConfig;
-  private instance: Bigtable.instance;
+  private instance?: Bigtable.Instance;
   private instances: BigtableClient[];
 
   constructor(config: BigtableFactoryConfig) {
@@ -31,6 +31,11 @@ export class BigtableFactory {
     });
 
     this.instance = bigtable.instance(instanceName);
+
+    if (!this.instance) {
+      throw new Error("Failed to create instance " + instanceName);
+    }
+
     const instanceExists = await this.instance.exists();
     if (!instanceExists || !instanceExists[0]) {
       debug("Instance", instanceName, "does not exist, creating..");
@@ -45,7 +50,7 @@ export class BigtableFactory {
 
     const bigtableClient = new BigtableClient(
       tableConfig,
-      this.instance,
+      this.instance as Bigtable.Instance,
       this.config.ttlScanIntervalMs,
       this.config.minJitterMs,
       this.config.maxJitterMs,
