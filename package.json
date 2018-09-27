@@ -4,7 +4,7 @@
   "description": "Convenience wrapper, batteries included, for @google-cloud/bigtable",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "repository": "git@github.com:knamp/static-styles.git",
+  "repository": "https://github.com/yildizdb/bigtable.git",
   "author": "Christian Froehlingsdorf <info@5cf.de>",
   "license": "MIT",
   "dependencies": {
