@@ -2,7 +2,8 @@ import * as Bigtable from "@google-cloud/bigtable";
 import * as Debug from "debug";
 
 import { BigtableClientConfig, RuleColumnFamily } from "./interfaces";
-import { JobTTL } from "./JobTTL";
+import { JobTTLEvent } from "./JobTTLEvent";
+import { EventEmitter } from "events";
 
 const debug = Debug("yildiz:bigtable:client");
 
@@ -14,7 +15,7 @@ const DEFAULT_COLUMN_FAMILY = "default";
 const COUNTS = "counts";
 const DEFAULT_MAX_VERSIONS = 1;
 
-export class BigtableClient {
+export class BigtableClient extends EventEmitter {
 
   private config: BigtableClientConfig;
   private instance: Bigtable.Instance;
@@ -25,7 +26,7 @@ export class BigtableClient {
   public tableMetadata!: Bigtable.Table;
   public cfNameMetadata!: string;
 
-  private job: JobTTL;
+  private job: JobTTLEvent;
   private defaultColumn!: string;
   private intervalInMs: number;
   private minJitterMs: number;
@@ -39,6 +40,7 @@ export class BigtableClient {
     minJitterMs: number,
     maxJitterMs: number,
   ) {
+    super();
 
     this.instance = instance;
     this.intervalInMs = intervalInMs || DEFAULT_TTL_SCAN_INTERVAL_MS;
@@ -46,7 +48,7 @@ export class BigtableClient {
     this.maxJitterMs = maxJitterMs || DEFAULT_MAX_JITTER_MS;
     this.config = config;
     this.isInitialized = false;
-    this.job = new JobTTL(this, this.intervalInMs);
+    this.job = new JobTTLEvent(this, this.intervalInMs);
   }
 
   /**
@@ -305,7 +307,7 @@ export class BigtableClient {
           increment: (value || 0),
         };
       })
-      .filter((rule: any) => rule.increment !== 0);
+      .filter((rule: any) => rule.increment !== 0) as Bigtable.RowRule[];
 
     if (rules.length > 0) {
       insertPromises.push(

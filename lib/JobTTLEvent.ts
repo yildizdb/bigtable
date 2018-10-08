@@ -3,7 +3,7 @@ import * as Debug from "debug";
 
 const debug = Debug("yildiz:bigtable:jobttl");
 
-export class JobTTL {
+export class JobTTLEvent {
 
   private btClient: BigtableClient;
   private intervalInMs: number;
@@ -81,6 +81,8 @@ export class JobTTL {
             const key = rowKeyTTL.split("#")[0];
             const column = rowKeyTTL.split(":")[1];
 
+            this.btClient.emit("expired", {key, column});
+
             // Delete both the entry in metadata table and the origin table
             return [
               this.btClient.tableMetadata.row(rowKeyTTL).delete(),
@@ -89,9 +91,20 @@ export class JobTTL {
           }).reduce((prev: any, next: any) => prev.concat(next), []),
         );
         debug("Deleted %s keys", chunksDeletion.length);
+
+        const deletedChunks = chunksDeletion.map((rowKeyTTL: string) =>
+          ({
+            key: rowKeyTTL.split("#")[0],
+            column: rowKeyTTL.split(":")[1],
+          }),
+        );
+
+        // Emit if it is completed
+        this.btClient.emit("expired", deletedChunks);
       } catch (error) {
         debug(error);
       }
+
     }
   }
 
