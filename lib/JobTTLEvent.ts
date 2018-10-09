@@ -7,7 +7,7 @@ export class JobTTLEvent {
 
   private btClient: BigtableClient;
   private intervalInMs: number;
-  private tov: any;
+  private tov!: NodeJS.Timer;
 
   constructor(btClient: BigtableClient, intervalInMs: number) {
     this.btClient = btClient;
@@ -44,63 +44,72 @@ export class JobTTLEvent {
   }
 
   /**
-   * Delete the expired cells after it is resolved, the job will be run again
+   * Delete the expired cells after it is resolved, the job will run again
    */
   private async deleteExpiredData() {
 
     const etl = (result: any) => {
-      const ttl: any = result.data[this.btClient.cfNameMetadata].ttl;
-
-      if (!ttl) {
-        return null;
-      }
-
-      const value = ttl[0].value;
-      const timestamp = ttl[0].timestamp;
-
-      // Not returning anything if timestamp is not expired
-      if ((timestamp / 1000) >= (Date.now() - (value * 1000))) {
-        return null;
-      }
-
-      return result.id;
+      return {
+        [result.id]: Object.keys(result.data[this.btClient.cfNameMetadata]),
+      };
     };
 
-    const filteredRowKeys = await this.btClient.scanCellsInternal(this.btClient.tableMetadata, [], etl);
+    const ranges = [];
+    const nowTimestamp = Date.now();
 
-    debug("Expired keys found", filteredRowKeys.length);
+    for (let i = 0; i < this.btClient.clusterCount; i++) {
+      ranges.push({
+        start: `ttl#${i}#0`,
+        end: `ttl#${i}#${nowTimestamp}`,
+      });
+    }
 
-    const chunksDeletions = this.arrayToChunks(filteredRowKeys, 100);
+    const options = {
+      ranges,
+    };
+
+    const filteredTTL = await this.btClient.scanCellsInternal(this.btClient.tableMetadata, options, etl);
+
+    // Return early
+    if (!filteredTTL || !filteredTTL.length) {
+      return;
+    }
 
     // Batching the delete
+    const chunksDeletions = this.arrayToChunks(filteredTTL, 100);
+
     for (const chunksDeletion of chunksDeletions) {
       try {
         await Promise.all(
-          chunksDeletion.map((rowKeyTTL: string) => {
+          chunksDeletion.map((ttlData: any) => {
 
-            const key = rowKeyTTL.split("#")[0];
-            const column = rowKeyTTL.split(":")[1];
-
-            this.btClient.emit("expired", {key, column});
+            const rowKeyTTL = Object.keys(ttlData)[0];
+            const qualifiers = ttlData[rowKeyTTL];
 
             // Delete both the entry in metadata table and the origin table
             return [
               this.btClient.tableMetadata.row(rowKeyTTL).delete(),
-              this.btClient.delete(key, column),
+
+              ...(
+                qualifiers
+                  .map((qualifier: string) => {
+
+                  const splitQualifier = qualifier.split("#");
+                  const row = splitQualifier[1];
+                  const column = splitQualifier[2];
+
+                  return this.btClient.delete(row, column)
+                    // Emit an event if it is deleted
+                    .then((result) => {
+                      this.btClient.emit("expired", {row, column});
+                  });
+              })),
             ];
           }).reduce((prev: any, next: any) => prev.concat(next), []),
         );
-        debug("Deleted %s keys", chunksDeletion.length);
 
-        const deletedChunks = chunksDeletion.map((rowKeyTTL: string) =>
-          ({
-            key: rowKeyTTL.split("#")[0],
-            column: rowKeyTTL.split(":")[1],
-          }),
-        );
+        debug("Deleted %s rows from Metadata table", chunksDeletion.length);
 
-        // Emit if it is completed
-        this.btClient.emit("expired", deletedChunks);
       } catch (error) {
         debug(error);
       }

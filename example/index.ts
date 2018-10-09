@@ -39,6 +39,10 @@ const sleep = (ms: any) => {
 
     const rowKey = "myrowkey";
 
+    myInstance.on("expired", (data) => {
+      debug("expired row:", data);
+    });
+
     // when column is null, the default column from the config is used
     // ttl only works on cell level, if a row has no more cells, bigtable will delete the row automatically
 
@@ -49,7 +53,7 @@ const sleep = (ms: any) => {
     // you can append by calling set with different column values
     const value = "myvalue";
     await myInstance.set(rowKey, value);
-    await myInstance.set(rowKey, value, 10, "newColumn");
+    await myInstance.set(rowKey, value, 7, "newColumn");
 
     await myInstance.multiSet(rowKey, {testColumn: "hello", anotherColumn: "yes"});
     await myInstance.multiSet(rowKey, {testColumn: "hello", anotherColumn: "yes"}, 5);
@@ -63,11 +67,8 @@ const sleep = (ms: any) => {
     debug(await myInstance.get(rowKey));
     debug(await myInstance.get(rowKey, "numberColumn"));
 
-    debug(`ttl ${rowKey} `, await myInstance.ttl(rowKey));
-    debug(`ttl ${rowKey}:newColumn `, await myInstance.ttl(rowKey, "newColumn"));
-
     debug("waiting...");
-    await sleep(7000);
+    await sleep(9000);
 
     await myInstance.set("rowKey1", value);
     debug("counts :", await myInstance.count());

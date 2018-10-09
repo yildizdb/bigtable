@@ -1,5 +1,6 @@
 import * as Bigtable from "@google-cloud/bigtable";
 import * as Debug from "debug";
+import * as murmur from "murmurhash";
 
 import { BigtableClientConfig, RuleColumnFamily } from "./interfaces";
 import { JobTTLEvent } from "./JobTTLEvent";
@@ -10,10 +11,14 @@ const debug = Debug("yildiz:bigtable:client");
 const DEFAULT_TTL_SCAN_INTERVAL_MS = 5000;
 const DEFAULT_MIN_JITTER_MS = 2000;
 const DEFAULT_MAX_JITTER_MS = 30000;
+const DEFAULT_MAX_VERSIONS = 1;
+
+const DEFAULT_CLUSTER_COUNT = 3;
+const DEFAULT_MURMUR_SEED = 1;
+
 const DEFAULT_COLUMN = "value";
 const DEFAULT_COLUMN_FAMILY = "default";
 const COUNTS = "counts";
-const DEFAULT_MAX_VERSIONS = 1;
 
 export class BigtableClient extends EventEmitter {
 
@@ -21,10 +26,11 @@ export class BigtableClient extends EventEmitter {
   private instance: Bigtable.Instance;
   private table!: Bigtable.Table;
   private cfName!: string;
-  private tov!: any;
+  private tov!: NodeJS.Timer;
 
   public tableMetadata!: Bigtable.Table;
   public cfNameMetadata!: string;
+  public clusterCount: number;
 
   private job: JobTTLEvent;
   private defaultColumn!: string;
@@ -32,6 +38,7 @@ export class BigtableClient extends EventEmitter {
   private minJitterMs: number;
   private maxJitterMs: number;
   private isInitialized: boolean;
+  private murmurSeed: number;
 
   constructor(
     config: BigtableClientConfig,
@@ -39,6 +46,8 @@ export class BigtableClient extends EventEmitter {
     intervalInMs: number,
     minJitterMs: number,
     maxJitterMs: number,
+    clusterCount?: number,
+    murmurSeed?: number,
   ) {
     super();
 
@@ -46,9 +55,24 @@ export class BigtableClient extends EventEmitter {
     this.intervalInMs = intervalInMs || DEFAULT_TTL_SCAN_INTERVAL_MS;
     this.minJitterMs = minJitterMs || DEFAULT_MIN_JITTER_MS;
     this.maxJitterMs = maxJitterMs || DEFAULT_MAX_JITTER_MS;
+    this.clusterCount = clusterCount || DEFAULT_CLUSTER_COUNT;
+    this.murmurSeed = murmurSeed || DEFAULT_MURMUR_SEED;
     this.config = config;
     this.isInitialized = false;
     this.job = new JobTTLEvent(this, this.intervalInMs);
+  }
+
+  /**
+   * Helper function to generate ttlRowKey
+   * @param rowKey
+   * @param data
+   */
+  private getTTLRowKey(ttl: number) {
+
+    const deleteTimestamp = Date.now() + (1000 * ttl);
+    const salt = murmur.v3(deleteTimestamp.toString(), this.murmurSeed) % this.clusterCount;
+
+    return `ttl#${salt}#${deleteTimestamp}`;
   }
 
   /**
@@ -56,14 +80,19 @@ export class BigtableClient extends EventEmitter {
    * @param rowKey
    * @param data
    */
-  private async insert(table: Bigtable.Table, cfName: string, rowKey: string, data: any): Promise<any> {
+  private async insert(
+    table: Bigtable.Table,
+    cfName: string,
+    rowKey: string,
+    data: Bigtable.GenericObject,
+  ): Promise<any> {
 
     if (!table || !rowKey || !data) {
       return;
     }
 
     const dataKeys = Object.keys(data);
-    const cleanedData: any = {};
+    const cleanedData: Bigtable.GenericObject = {};
 
     dataKeys.map((key: string) => {
 
@@ -86,7 +115,7 @@ export class BigtableClient extends EventEmitter {
    * Parsing the stored string, and return as it is if not parsable
    * @param value
    */
-  private getParsedValue(value: any) {
+  private getParsedValue(value: string) {
 
     let result = value;
 
@@ -104,7 +133,7 @@ export class BigtableClient extends EventEmitter {
    * @param rowKey
    * @param column
    */
-  private async retrieve(table: any, cfName: string, rowKey: string, column?: string, complete?: boolean):
+  private async retrieve(table: Bigtable.Table, cfName: string, rowKey: string, column?: string, complete?: boolean):
     Promise<any> {
 
     if (!table || !rowKey) {
@@ -116,7 +145,7 @@ export class BigtableClient extends EventEmitter {
 
     const row = table.row(rowKey + "");
 
-    const result: any = {};
+    const result: Bigtable.GenericObject = {};
     let rowGet = null;
 
     try {
@@ -169,20 +198,22 @@ export class BigtableClient extends EventEmitter {
    * @param filter
    * @param etl
    */
-  public async scanCellsInternal(table: Bigtable.Table, filter: any[], etl?: (result: any) => any): Promise<any> {
+  public async scanCellsInternal(
+    table: Bigtable.Table,
+    options: Bigtable.GenericObject,
+    etl?: (result: Bigtable.GenericObject) => any,
+  ): Promise<any> {
 
     debug("Scanning cells via filter for", this.config.name);
     return new Promise((resolve, reject) => {
 
-      const results: any[] = [];
+      const results: Bigtable.GenericObject[] = [];
 
-      table.createReadStream({
-        filter,
-      })
+      table.createReadStream(options)
       .on("error", (error: Error) => {
         reject(error);
       })
-      .on("data", (result: any) => {
+      .on("data", (result: Bigtable.GenericObject) => {
         if (etl) {
           if (etl(result)) {
             results.push(etl(result));
@@ -197,8 +228,8 @@ export class BigtableClient extends EventEmitter {
     });
   }
 
-  public async scanCells(filter: any[], etl?: (result: any) => any): Promise<any> {
-    return this.scanCellsInternal(this.table, filter, etl);
+  public async scanCells(options: Bigtable.StreamParam, etl?: (result: Bigtable.GenericObject) => any): Promise<any> {
+    return this.scanCellsInternal(this.table, options, etl);
   }
 
   /**
@@ -283,17 +314,36 @@ export class BigtableClient extends EventEmitter {
    * @param filter
    * @param etl
    */
-  public multiAdd(rowKey: string, data: any, ttl?: number): Promise<any> | void {
+  public multiAdd(rowKey: string, data: Bigtable.GenericObject, ttl?: number): Promise<any> | void {
 
     debug("Multi-adding cells for", this.config.name, rowKey, ttl);
+
     const row = this.table.row(rowKey + "");
     const insertPromises: Array<Promise<any>> = [];
+    const columnNames = Object.keys(data);
+
+    if (!columnNames.length) {
+      return;
+    }
 
     if (!data) {
       return;
     }
 
-    const columnNames = Object.keys(data);
+    if (ttl) {
+      const ttlRowKey = this.getTTLRowKey(ttl);
+      const ttlData: Bigtable.GenericObject = {};
+
+      columnNames.forEach((columnName: string) => {
+        const columnQualifier = `${this.cfName}#${rowKey}#${columnName}`;
+        ttlData[columnQualifier] = ttl;
+      });
+
+      insertPromises.push(
+        this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
+      );
+    }
+
     const rules = columnNames
       .map((key: string) => {
 
@@ -307,21 +357,14 @@ export class BigtableClient extends EventEmitter {
           increment: (value || 0),
         };
       })
-      .filter((rule: any) => rule.increment !== 0) as Bigtable.RowRule[];
+      .filter(
+        (rule: Bigtable.GenericObject | undefined) => !!rule && rule.increment !== 0,
+      ) as Bigtable.RowRule[];
 
     if (rules.length > 0) {
       insertPromises.push(
         row.createRules(rules),
       );
-    }
-
-    if (ttl) {
-      columnNames.forEach((columnName: string) => {
-        const ttlRowKey = `${rowKey}#${this.cfName}:${columnName}`;
-        insertPromises.push(
-          this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, {ttl}),
-        );
-      });
     }
 
     return Promise.all(insertPromises);
@@ -331,10 +374,10 @@ export class BigtableClient extends EventEmitter {
    * Set or append a value of cell
    * @param rowKey
    * @param value
-   * @param ttl
+   * @param ttl in Seconds
    * @param column
    */
-  public async set(rowKey: string, value: string, ttl?: number, column?: string): Promise<any> {
+  public async set(rowKey: string, value: string | number, ttl?: number, column?: string): Promise<any> {
 
     debug("Setting cell for", this.config.name, rowKey, column, value, ttl);
     const columnName = column ? column : this.defaultColumn;
@@ -342,8 +385,20 @@ export class BigtableClient extends EventEmitter {
       [columnName]: value,
     };
 
-    const ttlRowKey = `${rowKey}#${this.cfName}:${columnName}`;
     const insertPromises: Array<Promise<any>> = [];
+
+    if (ttl) {
+      const ttlRowKey = this.getTTLRowKey(ttl);
+      const columnQualifier = `${this.cfName}#${rowKey}#${columnName}`;
+
+      const ttlData = {
+        [columnQualifier] : ttl,
+      };
+
+      insertPromises.push(
+        this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
+      );
+    }
 
     const rowExists = await this.table.row(rowKey + "").exists();
     if (!rowExists || !rowExists[0]) {
@@ -356,12 +411,6 @@ export class BigtableClient extends EventEmitter {
     insertPromises.push(
       this.insert(this.table, this.cfName, rowKey, data),
     );
-
-    if (ttl) {
-      insertPromises.push(
-        this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, {ttl}),
-      );
-    }
 
     return Promise.all(insertPromises);
   }
@@ -411,19 +460,32 @@ export class BigtableClient extends EventEmitter {
    * Set values of multiple column based on objects
    * @param rowKey
    * @param columnsObject
-   * @param ttl
+   * @param ttl in Seconds
    */
-  public async multiSet(rowKey: string, columnsObject: any, ttl?: number) {
+  public async multiSet(rowKey: string, columnsObject: Bigtable.GenericObject, ttl?: number) {
 
     debug("Running multi-set for", this.config.name, rowKey, ttl);
 
-    const keys = Object.keys(columnsObject);
+    const insertPromises: Array<Promise<any>> = [];
+    const columnNames = Object.keys(columnsObject);
 
-    if (!keys.length) {
+    if (!columnNames.length) {
       return;
     }
 
-    const insertPromises: Array<Promise<any>> = [];
+    if (ttl) {
+      const ttlRowKey = this.getTTLRowKey(ttl);
+      const ttlData: Bigtable.GenericObject = {};
+
+      columnNames.forEach((columnName: string) => {
+        const columnQualifier = `${this.cfName}#${rowKey}#${columnName}`;
+        ttlData[columnQualifier] = ttl;
+      });
+
+      insertPromises.push(
+        this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
+      );
+    }
 
     const rowExists = await this.table.row(rowKey + "").exists();
     if (!rowExists || !rowExists[0]) {
@@ -436,15 +498,6 @@ export class BigtableClient extends EventEmitter {
     insertPromises.push(
       this.insert(this.table, this.cfName, rowKey, columnsObject),
     );
-
-    if (ttl) {
-      keys.forEach((columnName: string) => {
-        const ttlRowKey = `${rowKey}#${this.cfName}:${columnName}`;
-        insertPromises.push(
-          this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, {ttl}),
-        );
-      });
-    }
 
     return Promise.all(insertPromises);
   }
@@ -482,7 +535,7 @@ export class BigtableClient extends EventEmitter {
    * Increase the value of the row by one if the value is integer
    * @param rowKey
    * @param column
-   * @param ttl
+   * @param ttl in Seconds
    */
   public async increase(rowKey: string, column?: string, ttl?: number): Promise<any> {
 
@@ -497,6 +550,19 @@ export class BigtableClient extends EventEmitter {
 
     const insertPromises: Array<Promise<any>> = [];
 
+    if (ttl) {
+      const ttlRowKey = this.getTTLRowKey(ttl);
+      const columnQualifier = `${this.cfName}#${rowKey}#${columnName}`;
+
+      const ttlData = {
+        [columnQualifier] : ttl,
+      };
+
+      insertPromises.push(
+        this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
+      );
+    }
+
     const rowExists = await row.exists();
     if (!rowExists || !rowExists[0]) {
       insertPromises.push(
@@ -509,13 +575,6 @@ export class BigtableClient extends EventEmitter {
       row.increment(`${this.cfName}:${columnName}`, 1),
     );
 
-    if (ttl) {
-      const ttlRowKey = `${rowKey}#${this.cfName}:${columnName}`;
-      insertPromises.push(
-        this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, {ttl}),
-      );
-    }
-
     return Promise.all(insertPromises);
   }
 
@@ -523,7 +582,7 @@ export class BigtableClient extends EventEmitter {
    * Decrease the value of the row by one if the value is integer
    * @param rowKey
    * @param column
-   * @param ttl
+   * @param ttl in Seconds
    */
   public async decrease(rowKey: string, column?: string, ttl?: number): Promise<any> {
 
@@ -538,6 +597,19 @@ export class BigtableClient extends EventEmitter {
 
     const insertPromises: Array<Promise<any>> = [];
 
+    if (ttl) {
+      const ttlRowKey = this.getTTLRowKey(ttl);
+      const columnQualifier = `${this.cfName}#${rowKey}#${columnName}`;
+
+      const ttlData = {
+        [columnQualifier] : ttl,
+      };
+
+      insertPromises.push(
+        this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
+      );
+    }
+
     const rowExists = await row.exists();
     if (!rowExists || !rowExists[0]) {
       insertPromises.push(
@@ -549,13 +621,6 @@ export class BigtableClient extends EventEmitter {
     insertPromises.push(
       row.increment(`${this.cfName}:${columnName}`, -1),
     );
-
-    if (ttl) {
-      const ttlRowKey = `${rowKey}#${this.cfName}:${columnName}`;
-      insertPromises.push(
-        this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, {ttl}),
-      );
-    }
 
     return Promise.all(insertPromises);
   }
@@ -569,34 +634,12 @@ export class BigtableClient extends EventEmitter {
     return counts || 0;
   }
 
-  /**
-   * Check the remainding ttl of cell
-   * @param rowKey
-   * @param column
-   */
-  public async ttl(rowKey: string, column?: string): Promise<any> {
-
-    debug("Checking ttl for", this.config.name, rowKey, column);
-
-    const columnName = column || this.defaultColumn || "";
-    const ttlRowKey = `${rowKey}#${this.cfName}:${columnName}`;
-
-    const ttl = await this.retrieve(this.tableMetadata, this.cfNameMetadata, ttlRowKey, "ttl");
-    const rowComplete = await this.retrieve(this.table, this.cfName, rowKey, columnName, true);
-    const rowTimestamp = parseInt(rowComplete.timestamp, 10);
-
-    const diff = (rowTimestamp / 1000) - (Date.now() - (ttl * 1000));
-    const diffSec = parseInt((diff / 1000).toFixed(0), 10);
-
-    return diffSec >= 0 ? diffSec : 0;
-  }
-
   public close() {
 
     debug("Closing job..", this.config.name);
 
     if (this.tov) {
-      clearTimeout(this.tov);
+      clearTimeout(this.tov as NodeJS.Timer);
     }
 
     this.job.close();

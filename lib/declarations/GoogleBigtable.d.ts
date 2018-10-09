@@ -37,7 +37,12 @@ declare module "@google-cloud/bigtable" {
       }
 
       export interface StreamParam {
-        filter: Array<{
+        prefix?: string;
+        ranges?: Array<{
+          start: Buffer | string;
+          end: Buffer | string;
+        }>;
+        filter?: Array<{
           [filterName: string]: any;
         }>;
       }

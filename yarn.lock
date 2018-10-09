@@ -131,7 +131,7 @@
   version "0.12.1"
   resolved "https://registry.yarnpkg.com/@types/caseless/-/caseless-0.12.1.tgz#9794c69c8385d0192acc471a540d1f8e0d16218a"
 
-"@types/debug@^0.0.30":
+"@types/debug@~0.0.30":
   version "0.0.30"
   resolved "https://registry.yarnpkg.com/@types/debug/-/debug-0.0.30.tgz#dc1e40f7af3b9c815013a7860e6252f6352a84df"
 
@@ -154,6 +154,10 @@
 "@types/long@^3.0.32":
   version "3.0.32"
   resolved "https://registry.yarnpkg.com/@types/long/-/long-3.0.32.tgz#f4e5af31e9e9b196d8e5fca8a5e2e20aa3d60b69"
+
+"@types/murmurhash@^0.0.0":
+  version "0.0.0"
+  resolved "https://registry.yarnpkg.com/@types/murmurhash/-/murmurhash-0.0.0.tgz#60d36183a430be4a7c489addff2b038151626e8e"
 
 "@types/node@*", "@types/node@~10.5.1":
   version "10.5.1"
@@ -1410,6 +1414,10 @@ mocha@~5.2.0:
 ms@2.0.0:
   version "2.0.0"
   resolved "https://registry.yarnpkg.com/ms/-/ms-2.0.0.tgz#5608aeadfc00be6c2901df5f9861788de0d597c8"
+
+murmurhash@^0.0.2:
+  version "0.0.2"
+  resolved "https://registry.yarnpkg.com/murmurhash/-/murmurhash-0.0.2.tgz#6f07bd8a1105e709c26fc89420cb5930c24585fe"
 
 nan@^2.0.0:
   version "2.10.0"

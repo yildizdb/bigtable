@@ -10,8 +10,8 @@ const config = {
   instanceName: "my-bigtable-cluster",
   keyFilename: "keyfile.json",
   ttlScanIntervalMs: 2000,
-  minJitterMs: 500,
-  maxJitterMs: 1000,
+  minJitterMs: 2000,
+  maxJitterMs: 5000,
 };
 
 const configClient = {
@@ -26,6 +26,9 @@ let btClient = null;
 const rowKey = "myrowkey";
 const value = "myvalue";
 
+let expiredData = {};
+let emitCounts = 0;
+
 describe(testName, () => {
 
 
@@ -33,6 +36,10 @@ describe(testName, () => {
       const btFactory = new BigtableFactory(config);
       await btFactory.init();
       btClient = await btFactory.get(configClient);
+      btClient.on("expired", (data) => {
+        expiredData = data;
+        emitCounts++;
+      })
     });
 
     after(() => {
@@ -159,18 +166,21 @@ describe(testName, () => {
       assert.equal(retrievedValue, null);
     });
 
+    it("should be able to emit the correct data on expiration", async () => {
+      assert.ok(expiredData.row);
+      assert.ok(expiredData.column);
+    });
+
     it("should wait for 4 seconds", (done) => {
       setTimeout(done, 4000);
     });
 
-    it("should get the remaining time based on the ttl", async () => {
-      const ttl = await btClient.ttl(rowKey, "newColumn");
-
-      assert.ok((ttl < 3));
-    });
-
     it("should wait for 3 seconds", (done) => {
       setTimeout(done, 3000);
+    });
+
+    it("should be able to emit correct number of times", async () => {
+      assert.equal(emitCounts, 6);
     });
 
     it("should delete all the value based on the ttl set", async () => {

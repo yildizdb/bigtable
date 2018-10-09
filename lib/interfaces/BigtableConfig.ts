@@ -5,6 +5,8 @@ export interface BigtableFactoryConfig {
   ttlScanIntervalMs: number;
   minJitterMs: number;
   maxJitterMs: number;
+  clusterCount?: number;
+  murmurSeed?: number;
 }
 
 export interface BigtableClientConfig {

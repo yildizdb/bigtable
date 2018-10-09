@@ -54,6 +54,8 @@ export class BigtableFactory {
       this.config.ttlScanIntervalMs,
       this.config.minJitterMs,
       this.config.maxJitterMs,
+      this.config.clusterCount,
+      this.config.murmurSeed,
     );
 
     await bigtableClient.init();
