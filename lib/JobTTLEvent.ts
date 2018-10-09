@@ -66,6 +66,7 @@ export class JobTTLEvent {
 
     const options = {
       ranges,
+      limit: this.btClient.ttlBatchSize,
     };
 
     const filteredTTL = await this.btClient.scanCellsInternal(this.btClient.tableMetadata, options, etl);
@@ -88,7 +89,8 @@ export class JobTTLEvent {
 
             // Delete both the entry in metadata table and the origin table
             return [
-              this.btClient.tableMetadata.row(rowKeyTTL).delete(),
+              this.btClient.tableMetadata.row(rowKeyTTL).delete().catch((error) =>
+                debug("Error during TTL deletion on Metadata table", error.message)),
 
               ...(
                 qualifiers
@@ -102,7 +104,8 @@ export class JobTTLEvent {
                     // Emit an event if it is deleted
                     .then((result) => {
                       this.btClient.emit("expired", {row, column});
-                  });
+                    })
+                    .catch((error) => debug("Error during TTL deletion on data table", error.message));
               })),
             ];
           }).reduce((prev: any, next: any) => prev.concat(next), []),

@@ -7,6 +7,7 @@ export interface BigtableFactoryConfig {
   maxJitterMs: number;
   clusterCount?: number;
   murmurSeed?: number;
+  ttlBatchSize?: number;
 }
 
 export interface BigtableClientConfig {

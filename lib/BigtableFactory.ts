@@ -56,6 +56,7 @@ export class BigtableFactory {
       this.config.maxJitterMs,
       this.config.clusterCount,
       this.config.murmurSeed,
+      this.config.ttlBatchSize,
     );
 
     await bigtableClient.init();

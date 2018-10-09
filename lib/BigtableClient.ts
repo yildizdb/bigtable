@@ -14,7 +14,8 @@ const DEFAULT_MAX_JITTER_MS = 30000;
 const DEFAULT_MAX_VERSIONS = 1;
 
 const DEFAULT_CLUSTER_COUNT = 3;
-const DEFAULT_MURMUR_SEED = 1;
+const DEFAULT_MURMUR_SEED = 0;
+const DEFAULT_TTL_BATCHSIZE = 250;
 
 const DEFAULT_COLUMN = "value";
 const DEFAULT_COLUMN_FAMILY = "default";
@@ -31,6 +32,7 @@ export class BigtableClient extends EventEmitter {
   public tableMetadata!: Bigtable.Table;
   public cfNameMetadata!: string;
   public clusterCount: number;
+  public ttlBatchSize: number;
 
   private job: JobTTLEvent;
   private defaultColumn!: string;
@@ -48,6 +50,7 @@ export class BigtableClient extends EventEmitter {
     maxJitterMs: number,
     clusterCount?: number,
     murmurSeed?: number,
+    ttlBatchSize?: number,
   ) {
     super();
 
@@ -57,6 +60,7 @@ export class BigtableClient extends EventEmitter {
     this.maxJitterMs = maxJitterMs || DEFAULT_MAX_JITTER_MS;
     this.clusterCount = clusterCount || DEFAULT_CLUSTER_COUNT;
     this.murmurSeed = murmurSeed || DEFAULT_MURMUR_SEED;
+    this.ttlBatchSize = ttlBatchSize || DEFAULT_TTL_BATCHSIZE;
     this.config = config;
     this.isInitialized = false;
     this.job = new JobTTLEvent(this, this.intervalInMs);
