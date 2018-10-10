@@ -436,6 +436,30 @@ export class BigtableClient extends EventEmitter {
   }
 
   /**
+   * Delete values from table, it uses mutate method from official bigtable client
+   * @param rowKey
+   * @param column
+   */
+  public async multiDelete(mutateRules: any[], isMetadata?: boolean, table?: Bigtable.Table) {
+
+    if (!mutateRules || !mutateRules.length) {
+      return;
+    }
+
+    const deleteRules = mutateRules
+      .filter((mutateRule) => !!mutateRule)
+      .map((mutateRule) => {
+        mutateRule.method = "delete";
+        return mutateRule;
+      });
+
+    const workingTable = isMetadata ? this.tableMetadata :
+      (table || this.table);
+
+    await workingTable.mutate(deleteRules);
+  }
+
+  /**
    * Delete a value of cell
    * @param rowKey
    * @param column

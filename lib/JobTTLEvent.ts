@@ -2,6 +2,18 @@ import { BigtableClient } from "./BigtableClient";
 import * as Debug from "debug";
 
 const debug = Debug("yildiz:bigtable:jobttl");
+const IS_METADATA = true;
+
+export interface ExpiredTTL {
+  ttlKey: string;
+  cellQualifiers: string[];
+}
+
+export interface Qualifier {
+  family: string;
+  row: string;
+  column: string;
+}
 
 export class JobTTLEvent {
 
@@ -14,9 +26,9 @@ export class JobTTLEvent {
     this.intervalInMs = intervalInMs;
   }
 
-  private arrayToChunks(array: any[], size: number) {
+  private arrayToChunks(array: ExpiredTTL[], size: number) {
 
-    const result: any[] = [];
+    const result: ExpiredTTL[][] = [];
     for (let i = 0; i < array.length; i += size) {
         const chunk = array.slice(i, i + size);
         result.push(chunk);
@@ -44,23 +56,21 @@ export class JobTTLEvent {
   }
 
   /**
-   * Delete the expired cells after it is resolved, the job will run again
+   * Get the expired ttls with the range that is defined by the expired timestamp
    */
-  private async deleteExpiredData() {
+  private async getExpiredTTLs(): Promise<ExpiredTTL[] | null> {
 
-    const etl = (result: any) => {
-      return {
-        [result.id]: Object.keys(result.data[this.btClient.cfNameMetadata]),
-      };
-    };
-
+    const currentTimestamp = Date.now();
     const ranges = [];
-    const nowTimestamp = Date.now();
+    const etl = (result: any) => ({
+      ttlKey: result.id,
+      cellQualifiers: Object.keys(result.data[this.btClient.cfNameMetadata]),
+    });
 
     for (let i = 0; i < this.btClient.clusterCount; i++) {
       ranges.push({
         start: `ttl#${i}#0`,
-        end: `ttl#${i}#${nowTimestamp}`,
+        end: `ttl#${i}#${currentTimestamp}`,
       });
     }
 
@@ -69,55 +79,88 @@ export class JobTTLEvent {
       limit: this.btClient.ttlBatchSize,
     };
 
-    const filteredTTL = await this.btClient.scanCellsInternal(this.btClient.tableMetadata, options, etl);
+    const expiredTTLs = await this.btClient.scanCellsInternal(this.btClient.tableMetadata, options, etl);
+    debug(`Range scan calls takes ${Date.now() - currentTimestamp} ms`);
 
-    // Return early
-    if (!filteredTTL || !filteredTTL.length) {
-      return;
-    }
+    return expiredTTLs;
+  }
+
+  /**
+   * Actual execution of the deletion of the TTLs
+   * @param expiredTTLs an Array of the object that contains details of the deletion
+   */
+  private async deleteExecutionTTLs(expiredTTLs: ExpiredTTL[]) {
+
+    const startTimestamp = Date.now();
 
     // Batching the delete
-    const chunksDeletions = this.arrayToChunks(filteredTTL, 100);
+    const chunksDeletions = this.arrayToChunks(expiredTTLs, this.btClient.ttlBatchSize);
 
     for (const chunksDeletion of chunksDeletions) {
+
+      // Map and flatten before generating cellEntries
+      const qualifiers = ([] as string[]).concat(
+        ...chunksDeletion
+          .map((expiredTTL: ExpiredTTL) => expiredTTL.cellQualifiers),
+        )
+        .map((qualifier: string) => {
+          const splitQualifiers = qualifier.split("#");
+          const family = splitQualifiers[0];
+          const row = splitQualifiers[1];
+          const column = splitQualifiers[2];
+
+          return {
+            family,
+            row,
+            column,
+          };
+        });
+
+      const cellEntries = qualifiers
+        .map((qualifier: Qualifier) => ({
+          key: qualifier.row,
+          data: [ `${qualifier.family}:${qualifier.column}`],
+        }));
+
+      const ttlEntries = chunksDeletion
+        .map((expiredTTL: ExpiredTTL) => ({
+          key: expiredTTL.ttlKey,
+        }));
+
       try {
-        await Promise.all(
-          chunksDeletion.map((ttlData: any) => {
-
-            const rowKeyTTL = Object.keys(ttlData)[0];
-            const qualifiers = ttlData[rowKeyTTL];
-
-            // Delete both the entry in metadata table and the origin table
-            return [
-              this.btClient.tableMetadata.row(rowKeyTTL).delete().catch((error) =>
-                debug("Error during TTL deletion on Metadata table", error.message)),
-
-              ...(
-                qualifiers
-                  .map((qualifier: string) => {
-
-                  const splitQualifier = qualifier.split("#");
-                  const row = splitQualifier[1];
-                  const column = splitQualifier[2];
-
-                  return this.btClient.delete(row, column)
-                    // Emit an event if it is deleted
-                    .then((result) => {
-                      this.btClient.emit("expired", {row, column});
-                    })
-                    .catch((error) => debug("Error during TTL deletion on data table", error.message));
-              })),
-            ];
-          }).reduce((prev: any, next: any) => prev.concat(next), []),
-        );
-
-        debug("Deleted %s rows from Metadata table", chunksDeletion.length);
-
+        await Promise.all([
+          this.btClient.multiDelete(cellEntries),
+          this.btClient.multiDelete(ttlEntries, IS_METADATA),
+        ]);
       } catch (error) {
         debug(error);
       }
 
+      qualifiers
+        .forEach((qualifier: Qualifier) => {
+          this.btClient.emit("expired", {
+            row: qualifier.row,
+            column: qualifier.column,
+          });
+        });
     }
+
+    debug(`Execution deletion calls takes ${Date.now() - startTimestamp} ms`);
+  }
+
+  /**
+   * Delete the expired cells after it is resolved, the job will run again
+   */
+  private async deleteExpiredData() {
+
+    const expiredTTLs = await this.getExpiredTTLs();
+
+    // Return early
+    if (!expiredTTLs || !expiredTTLs.length) {
+      return;
+    }
+
+    return await this.deleteExecutionTTLs(expiredTTLs);
   }
 
   public close() {

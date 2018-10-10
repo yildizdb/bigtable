@@ -1,6 +1,6 @@
 import * as Debug from "debug";
 
-import BigtableFactory from "..";
+import { BigtableFactory } from "..";
 
 const debug = Debug("yildiz:bigtable:example");
 
@@ -39,7 +39,7 @@ const sleep = (ms: any) => {
 
     const rowKey = "myrowkey";
 
-    myInstance.on("expired", (data) => {
+    myInstance.on("expired", (data: any) => {
       debug("expired row:", data);
     });
 

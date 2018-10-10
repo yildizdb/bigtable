@@ -19,6 +19,12 @@ declare module "@google-cloud/bigtable" {
         union?: boolean;
       }
 
+      export interface MutateRule {
+        method: string;
+        key: string;
+        data?: string[];
+      }
+
       export interface FamilyConfig {
         rule: FamilyRule;
       }
@@ -36,7 +42,7 @@ declare module "@google-cloud/bigtable" {
         };
       }
 
-      export interface StreamParam {
+      export interface StreamOptions {
         prefix?: string;
         ranges?: Array<{
           start: Buffer | string;
@@ -45,6 +51,7 @@ declare module "@google-cloud/bigtable" {
         filter?: Array<{
           [filterName: string]: any;
         }>;
+        limit?: number;
       }
 
       export interface Instance {
@@ -58,7 +65,8 @@ declare module "@google-cloud/bigtable" {
         family: (name: string) => Bigtable.Family;
         delete: () => Promise<void>;
         insert: (fromat: TableInsertFormat[]) => Promise<void>;
-        createReadStream: (param: StreamParam) => any;
+        createReadStream: (param: StreamOptions) => any;
+        mutate: (mutateRules: MutateRule[]) => Promise<any>;
         row: (key: string) => Bigtable.Row;
         exists: () => GenericObject[];
       }
