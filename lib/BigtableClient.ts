@@ -232,7 +232,7 @@ export class BigtableClient extends EventEmitter {
     });
   }
 
-  public async scanCells(options: Bigtable.StreamParam, etl?: (result: Bigtable.GenericObject) => any): Promise<any> {
+  public async scanCells(options: Bigtable.StreamOptions, etl?: (result: Bigtable.GenericObject) => any): Promise<any> {
     return this.scanCellsInternal(this.table, options, etl);
   }
 
