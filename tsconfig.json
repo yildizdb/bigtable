@@ -11,7 +11,8 @@
     "noImplicitAny": true,
     "strict": true,
     "outDir": "dist/",
-    "declaration": true
+    "declaration": true,
+    "declarationMap": true
   },
   "exclude": [
     "./coverage",
