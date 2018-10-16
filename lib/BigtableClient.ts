@@ -2,7 +2,7 @@ import * as Bigtable from "@google-cloud/bigtable";
 import * as Debug from "debug";
 import * as murmur from "murmurhash";
 
-import { BigtableClientConfig, RuleColumnFamily } from "./interfaces";
+import { BigtableClientConfig, RuleColumnFamily, BulkData } from "./interfaces";
 import { JobTTLEvent } from "./JobTTLEvent";
 import { EventEmitter } from "events";
 
@@ -457,6 +457,25 @@ export class BigtableClient extends EventEmitter {
       (table || this.table);
 
     await workingTable.mutate(deleteRules);
+
+    if (!isMetadata) {
+      const distinctRows = deleteRules
+        .map((deleteRule) => deleteRule.key)
+        .filter((item, pos, rowArray) => rowArray.indexOf(item) === pos);
+
+      const options = {
+        keys: distinctRows,
+      };
+
+      const etl = (result: any) => result.id ? true : false;
+
+      const rowExists = (await this.scanCellsInternal(this.table, options, etl)).length;
+
+      // Would be negative int if some rows are empty
+      const difference = rowExists - distinctRows.length;
+
+      await this.tableMetadata.row(COUNTS).increment(`${this.cfNameMetadata}:${COUNTS}`, difference);
+    }
   }
 
   /**
@@ -482,6 +501,59 @@ export class BigtableClient extends EventEmitter {
         await this.tableMetadata.row(COUNTS)
           .increment(`${this.cfNameMetadata}:${COUNTS}`, -1);
     }
+  }
+  /**
+   * Bulk insert the value into table, it should follow the custom rules of bulkInsert
+   * @param insertData
+   */
+  public async bulkInsert(insertData: BulkData[], ttl?: number) {
+
+    if (!insertData || !insertData.length) {
+      return;
+    }
+
+    const insertPromises = [];
+
+    const insertRules = insertData
+      .filter((insertSingleData) => !!insertSingleData)
+      .map((insertSingleData) => ({
+        key: insertSingleData.row,
+        data: {
+          [insertSingleData.family || this.cfName]: {
+            [insertSingleData.column]: insertSingleData.data,
+          },
+        },
+      }));
+
+    // Get distinct rows
+    const distinctRowsCount = insertData
+      .map((insertSingleData) => insertSingleData.row)
+      .filter((item, pos, rowArray) => rowArray.indexOf(item) === pos)
+      .length;
+
+    if (ttl) {
+
+      const ttlRowKey = this.getTTLRowKey(ttl);
+      const ttlData: Bigtable.GenericObject = {};
+
+      insertData.forEach((insertSingleData) => {
+        const columnQualifier =
+          `${insertSingleData.family || this.cfName}#${insertSingleData.row}#${insertSingleData.column}`;
+        ttlData[columnQualifier] = ttl;
+      });
+
+      insertPromises.push(
+        this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
+      );
+    }
+
+    insertPromises.push(
+      this.table.insert(insertRules),
+      this.tableMetadata.row(COUNTS).increment(`${this.cfNameMetadata}:${COUNTS}`, distinctRowsCount),
+    );
+
+    // Push all promises into single Promise.all
+    await Promise.all(insertPromises);
   }
 
   /**

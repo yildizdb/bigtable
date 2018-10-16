@@ -26,3 +26,10 @@ export interface RuleColumnFamily {
   };
   union?: boolean;
 }
+
+export interface BulkData {
+  family?: string;
+  row: string;
+  column: string;
+  data: any;
+}

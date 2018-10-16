@@ -127,6 +127,10 @@ export class JobTTLEvent {
           key: expiredTTL.ttlKey,
         }));
 
+      if (!cellEntries || !ttlEntries) {
+        return;
+      }
+
       try {
         await Promise.all([
           this.btClient.multiDelete(cellEntries),
@@ -153,7 +157,7 @@ export class JobTTLEvent {
    */
   private async deleteExpiredData() {
 
-    const expiredTTLs = await this.getExpiredTTLs();
+    const expiredTTLs = (await this.getExpiredTTLs());
 
     // Return early
     if (!expiredTTLs || !expiredTTLs.length) {

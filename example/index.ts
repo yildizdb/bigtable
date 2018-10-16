@@ -62,6 +62,37 @@ const sleep = (ms: any) => {
     await myInstance.increase(rowKey, "numberColumn");
     await myInstance.decrease(rowKey, "numberColumn");
 
+    await myInstance.bulkInsert([
+      {
+        row: "jean-paul",
+        column: "sartre",
+        data: "france",
+      },
+      {
+        row: "emmanuel",
+        column: "kant",
+        data: "germany",
+      },
+      {
+        row: "albert",
+        column: "camus",
+        data: "france",
+      },
+    ], 5);
+
+    await myInstance.bulkInsert([
+      {
+        row: "thomas",
+        column: "hobbes",
+        data: "england",
+      },
+      {
+        row: "friedrich",
+        column: "nietzche",
+        data: "germany",
+      },
+    ]);
+
     await myInstance.multiAdd(rowKey, {foo: 1, bar: -5}, 5);
 
     debug(await myInstance.get(rowKey));
