@@ -1,0 +1,10 @@
+example/
+lib/interfaces/
+lib/BigtableClient.ts
+lib/BigtableFactory.ts
+lib/JobTTLEvent.ts
+.editorconfig
+test/
+.gitignore
+tsconfig.json
+tslint.json
