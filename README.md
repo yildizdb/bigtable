@@ -53,7 +53,8 @@ Then, using the factory you can create handles for you tables very easily.
 You can see that we are taking away the complexity of handling columnFamilies and
 columns in general, by assuming default values in the API that can be set via config optionally.
 However the API always allows you to access cells (by passing a column name as parameter) directly,
-as well as accessing and deleting whole rows.
+as well as accessing and deleting whole rows. Please bear in mind that the number is TTL in seconds, 
+and will be deleted on the next job run.
 
 ```javascript
 const myTable = await bigtableFactory.get({
@@ -75,6 +76,24 @@ await myTable.multiSet(rowKey, {testColumn: "hello", anotherColumn: "yes"}, 5);
 
 await myTable.increase(rowKey);
 await myTable.decrease(rowKey);
+
+await myTable.bulkInsert([
+    {
+    row: "jean-paul",
+    column: "sartre",
+    data: "france",
+    },
+    {
+    row: "emmanuel",
+    column: "kant",
+    data: "germany",
+    },
+    {
+    row: "baruch",
+    column: "spinoza",
+    data: "netherland",
+    },
+], 5);
 
 await myTable.multiAdd(rowKey, {foo: 1, bar: -5}, 7);
 await myTable.get(rowKey);

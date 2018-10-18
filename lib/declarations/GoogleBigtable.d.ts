@@ -64,7 +64,7 @@ declare module "@google-cloud/bigtable" {
         create: (name: string) => Promise<void>;
         family: (name: string) => Bigtable.Family;
         delete: () => Promise<void>;
-        insert: (fromat: TableInsertFormat[]) => Promise<void>;
+        insert: (format: TableInsertFormat[]) => Promise<void>;
         createReadStream: (param: StreamOptions) => any;
         mutate: (mutateRules: MutateRule[]) => Promise<any>;
         row: (key: string) => Bigtable.Row;

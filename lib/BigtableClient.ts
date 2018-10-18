@@ -31,6 +31,8 @@ export class BigtableClient extends EventEmitter {
 
   public tableMetadata!: Bigtable.Table;
   public cfNameMetadata!: string;
+  public tableTTLReference!: Bigtable.Table;
+  public cfNameTTLReference!: string;
   public clusterCount: number;
   public ttlBatchSize: number;
 
@@ -77,6 +79,88 @@ export class BigtableClient extends EventEmitter {
     const salt = murmur.v3(deleteTimestamp.toString(), this.murmurSeed) % this.clusterCount;
 
     return `ttl#${salt}#${deleteTimestamp}`;
+  }
+
+  /**
+   * Helper function to check and delete Reference Keys if exists
+   * @param referenceKeys
+   */
+  private async deleteReferenceKeys(referenceKeys: string[]) {
+    const options = {
+      keys: referenceKeys,
+    };
+
+    const etl = (result: any) => {
+
+      const value = result.data &&
+        result.data[this.cfNameTTLReference] &&
+        result.data[this.cfNameTTLReference].ttlKey &&
+        result.data[this.cfNameTTLReference].ttlKey[0] &&
+        result.data[this.cfNameTTLReference].ttlKey[0].value;
+
+      if (!value) {
+        return null;
+      }
+
+      return {
+        identifier: result.id,
+        ttlKey: value,
+      };
+    };
+
+    // Get an array of results from reference table if each columns has its corresponding ttlKey
+    const ttlReferenceRow = await this.scanCellsInternal(this.tableTTLReference, options, etl);
+
+    // Create a mutate rules based on the array returned
+    if (ttlReferenceRow && ttlReferenceRow.length) {
+      const deleteMutates = ttlReferenceRow
+        .map((singleRow: {identifier: string; ttlKey: string; }) => ({
+          key: singleRow.ttlKey,
+          data: [`${this.cfNameMetadata}:${singleRow.identifier}`],
+        }));
+
+      debug(deleteMutates);
+      const isMetadata = true;
+      await this.multiDelete(deleteMutates, isMetadata);
+    }
+  }
+
+  /**
+   * Getting the mutate array for Bulk operations, it will be used to delete ttl and ttl reference
+   * @param rowKey
+   * @param ttl in Seconds
+   * @param columnNames as column identifier
+   * @param ttlRowkey to get uniform ttlRowKey
+   */
+  private async getMutateArrayForBulk(rowKey: string, ttl: number, columnNames: string[], ttlRowKey: string) {
+
+    const ttlData: Bigtable.GenericObject = {};
+    const referenceKeys: string[] = [];
+    const ttlReferenceData: Bigtable.TableInsertFormat[] = [];
+
+    columnNames.forEach((columnName: string) => {
+
+      const columnQualifier = `${this.cfName}#${rowKey}#${columnName}`;
+
+      ttlData[columnQualifier] = ttl;
+      referenceKeys.push(columnQualifier);
+
+      ttlReferenceData.push({
+        key: columnQualifier,
+        data: {
+          [this.cfNameTTLReference]: {
+            ttlKey: ttlRowKey,
+          },
+        },
+      });
+    });
+
+    await this.deleteReferenceKeys(referenceKeys);
+
+    return {
+      ttlData,
+      ttlReferenceData,
+    };
   }
 
   /**
@@ -296,8 +380,23 @@ export class BigtableClient extends EventEmitter {
       });
     }
 
+    this.tableTTLReference = this.instance.table(`${name}_ttl_reference`);
+    const tableTTLReferenceExists = await this.tableTTLReference.exists();
+    if (!tableTTLReferenceExists || !tableTTLReferenceExists[0]) {
+      await this.tableTTLReference.create(name);
+    }
+
+    const cFamilyTTLReference = this.tableTTLReference.family(`${columnFamily}_ttl_reference`);
+    const cFamilyTTLReferenceExists = await cFamilyTTLReference.exists();
+    if (!cFamilyTTLReferenceExists || !cFamilyTTLReferenceExists[0]) {
+      await cFamilyTTLReference.create({
+        rule,
+      });
+    }
+
     this.cfName = cFamily.id;
     this.cfNameMetadata = cFamilyMetadata.id;
+    this.cfNameTTLReference = cFamilyTTLReference.id;
     this.isInitialized = true;
 
     if (this.minJitterMs && this.maxJitterMs) {
@@ -318,7 +417,7 @@ export class BigtableClient extends EventEmitter {
    * @param filter
    * @param etl
    */
-  public multiAdd(rowKey: string, data: Bigtable.GenericObject, ttl?: number): Promise<any> | void {
+  public async multiAdd(rowKey: string, data: Bigtable.GenericObject, ttl?: number) {
 
     debug("Multi-adding cells for", this.config.name, rowKey, ttl);
 
@@ -336,16 +435,17 @@ export class BigtableClient extends EventEmitter {
 
     if (ttl) {
       const ttlRowKey = this.getTTLRowKey(ttl);
-      const ttlData: Bigtable.GenericObject = {};
+      const { ttlData, ttlReferenceData } = await this.getMutateArrayForBulk(rowKey, ttl, columnNames, ttlRowKey);
 
-      columnNames.forEach((columnName: string) => {
-        const columnQualifier = `${this.cfName}#${rowKey}#${columnName}`;
-        ttlData[columnQualifier] = ttl;
-      });
+      if (ttlReferenceData) {
+        insertPromises.push(this.tableTTLReference.insert(ttlReferenceData));
+      }
 
-      insertPromises.push(
-        this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
-      );
+      if (ttlData) {
+        insertPromises.push(
+          this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
+        );
+      }
     }
 
     const rules = columnNames
@@ -395,11 +495,22 @@ export class BigtableClient extends EventEmitter {
       const ttlRowKey = this.getTTLRowKey(ttl);
       const columnQualifier = `${this.cfName}#${rowKey}#${columnName}`;
 
+      // Check if the ttlReference exists in the ttl reference table
+      const ttlReference = await this
+        .retrieve(this.tableTTLReference, this.cfNameTTLReference, columnQualifier);
+
+      // If exists delete the corresponding cell
+      if (ttlReference && ttlReference.ttlKey) {
+        const row = this.tableMetadata.row(ttlReference.ttlKey);
+        await row.deleteCells([`${this.cfNameMetadata}:${columnQualifier}`]);
+      }
+
       const ttlData = {
         [columnQualifier] : ttl,
       };
 
       insertPromises.push(
+        this.insert(this.tableTTLReference, this.cfNameTTLReference, columnQualifier, {ttlKey: ttlRowKey}),
         this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
       );
     }
@@ -453,8 +564,8 @@ export class BigtableClient extends EventEmitter {
         return mutateRule;
       });
 
-    const workingTable = isMetadata ? this.tableMetadata :
-      (table || this.table);
+    const workingTable = table ? table :
+      (isMetadata ? this.tableMetadata : this.table);
 
     await workingTable.mutate(deleteRules);
 
@@ -469,12 +580,14 @@ export class BigtableClient extends EventEmitter {
 
       const etl = (result: any) => result.id ? true : false;
 
-      const rowExists = (await this.scanCellsInternal(this.table, options, etl)).length;
+      const rowExists = await this.scanCellsInternal(this.table, options, etl);
 
       // Would be negative int if some rows are empty
-      const difference = rowExists - distinctRows.length;
+      const difference = rowExists.length - distinctRows.length;
 
-      await this.tableMetadata.row(COUNTS).increment(`${this.cfNameMetadata}:${COUNTS}`, difference);
+      if (difference !== 0) {
+        await this.tableMetadata.row(COUNTS).increment(`${this.cfNameMetadata}:${COUNTS}`, difference);
+      }
     }
   }
 
@@ -512,6 +625,8 @@ export class BigtableClient extends EventEmitter {
       return;
     }
 
+    debug("Bulk insert for", insertData.length, "data");
+
     const insertPromises = [];
 
     const insertRules = insertData
@@ -526,15 +641,36 @@ export class BigtableClient extends EventEmitter {
       }));
 
     // Get distinct rows
-    const distinctRowsCount = insertData
+    const distinctRows = insertData
       .map((insertSingleData) => insertSingleData.row)
-      .filter((item, pos, rowArray) => rowArray.indexOf(item) === pos)
-      .length;
+      .filter((item, pos, rowArray) => rowArray.indexOf(item) === pos);
+
+    const options = {
+      keys: distinctRows,
+    };
+    const etl = (result: any) => result.id ? true : false;
+    const distinctRowsExists = await this.scanCellsInternal(this.table, options, etl);
+
+    const distinctRowsCount = distinctRows.length;
 
     if (ttl) {
 
       const ttlRowKey = this.getTTLRowKey(ttl);
       const ttlData: Bigtable.GenericObject = {};
+
+      const referenceKeys: string[] = insertData
+        .map((insertSingleData: BulkData) =>
+          `${insertSingleData.family || this.cfName}#${insertSingleData.row}#${insertSingleData.column}`);
+
+      const ttlReferenceData: Bigtable.TableInsertFormat[] = insertData
+        .map((insertSingleData: BulkData) => ({
+          key: `${insertSingleData.family || this.cfName}#${insertSingleData.row}#${insertSingleData.column}`,
+          data: {
+            [this.cfNameTTLReference]: {
+              ttlKey: ttlRowKey,
+            },
+          },
+        }));
 
       insertData.forEach((insertSingleData) => {
         const columnQualifier =
@@ -542,14 +678,23 @@ export class BigtableClient extends EventEmitter {
         ttlData[columnQualifier] = ttl;
       });
 
+      await this.deleteReferenceKeys(referenceKeys);
+
       insertPromises.push(
+        this.tableTTLReference.insert(ttlReferenceData),
         this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
+      );
+    }
+
+    const difference = distinctRowsCount - distinctRowsExists.length;
+    if (difference !== 0) {
+      insertPromises.push(
+        this.tableMetadata.row(COUNTS).increment(`${this.cfNameMetadata}:${COUNTS}`, difference),
       );
     }
 
     insertPromises.push(
       this.table.insert(insertRules),
-      this.tableMetadata.row(COUNTS).increment(`${this.cfNameMetadata}:${COUNTS}`, distinctRowsCount),
     );
 
     // Push all promises into single Promise.all
@@ -575,16 +720,17 @@ export class BigtableClient extends EventEmitter {
 
     if (ttl) {
       const ttlRowKey = this.getTTLRowKey(ttl);
-      const ttlData: Bigtable.GenericObject = {};
+      const { ttlData, ttlReferenceData } = await this.getMutateArrayForBulk(rowKey, ttl, columnNames, ttlRowKey);
 
-      columnNames.forEach((columnName: string) => {
-        const columnQualifier = `${this.cfName}#${rowKey}#${columnName}`;
-        ttlData[columnQualifier] = ttl;
-      });
+      if (ttlReferenceData) {
+        insertPromises.push(this.tableTTLReference.insert(ttlReferenceData));
+      }
 
-      insertPromises.push(
-        this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
-      );
+      if (ttlData) {
+        insertPromises.push(
+          this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
+        );
+      }
     }
 
     const rowExists = await this.table.row(rowKey + "").exists();
@@ -654,11 +800,22 @@ export class BigtableClient extends EventEmitter {
       const ttlRowKey = this.getTTLRowKey(ttl);
       const columnQualifier = `${this.cfName}#${rowKey}#${columnName}`;
 
+      // Check if the ttlReference exists in the ttl reference table
+      const ttlReference = await this
+        .retrieve(this.tableTTLReference, this.cfNameTTLReference, columnQualifier);
+
+      // If exists delete the corresponding cell
+      if (ttlReference && ttlReference.ttlKey) {
+        const ttlReferenceRow = this.tableMetadata.row(ttlReference.ttlKey);
+        await ttlReferenceRow.deleteCells([`${this.cfNameMetadata}:${columnQualifier}`]);
+      }
+
       const ttlData = {
         [columnQualifier] : ttl,
       };
 
       insertPromises.push(
+        this.insert(this.tableTTLReference, this.cfNameTTLReference, columnQualifier, {ttlKey: ttlRowKey}),
         this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
       );
     }
@@ -701,11 +858,22 @@ export class BigtableClient extends EventEmitter {
       const ttlRowKey = this.getTTLRowKey(ttl);
       const columnQualifier = `${this.cfName}#${rowKey}#${columnName}`;
 
+      // Check if the ttlReference exists in the ttl reference table
+      const ttlReference = await this
+        .retrieve(this.tableTTLReference, this.cfNameTTLReference, columnQualifier);
+
+      // If exists delete the corresponding cell
+      if (ttlReference && ttlReference.ttlKey) {
+        const ttlReferenceRow = this.tableMetadata.row(ttlReference.ttlKey);
+        await ttlReferenceRow.deleteCells([`${this.cfNameMetadata}:${columnQualifier}`]);
+      }
+
       const ttlData = {
         [columnQualifier] : ttl,
       };
 
       insertPromises.push(
+        this.insert(this.tableTTLReference, this.cfNameTTLReference, columnQualifier, {ttlKey: ttlRowKey}),
         this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
       );
     }

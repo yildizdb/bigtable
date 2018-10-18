@@ -53,10 +53,30 @@ const sleep = (ms: any) => {
     // you can append by calling set with different column values
     const value = "myvalue";
     await myInstance.set(rowKey, value);
-    await myInstance.set(rowKey, value, 7, "newColumn");
+    await myInstance.set(rowKey, value, 5, "newColumn");
+    await myInstance.set(rowKey, value, 8, "newColumn");
+
+    await myInstance.bulkInsert([
+      {
+        row: "jean-paul",
+        column: "sartre",
+        data: "france",
+      },
+      {
+        row: "emmanuel",
+        column: "kant",
+        data: "germany",
+      },
+      {
+        row: "baruch",
+        column: "spinoza",
+        data: "netherland",
+      },
+    ], 5);
 
     await myInstance.multiSet(rowKey, {testColumn: "hello", anotherColumn: "yes"});
     await myInstance.multiSet(rowKey, {testColumn: "hello", anotherColumn: "yes"}, 5);
+    await myInstance.multiSet(rowKey, {testColumn: "hello", anotherColumn: "no"}, 7);
 
     await myInstance.increase(rowKey, "numberColumn");
     await myInstance.increase(rowKey, "numberColumn");
@@ -73,12 +93,7 @@ const sleep = (ms: any) => {
         column: "kant",
         data: "germany",
       },
-      {
-        row: "albert",
-        column: "camus",
-        data: "france",
-      },
-    ], 5);
+    ], 6);
 
     await myInstance.bulkInsert([
       {
@@ -94,6 +109,7 @@ const sleep = (ms: any) => {
     ]);
 
     await myInstance.multiAdd(rowKey, {foo: 1, bar: -5}, 5);
+    debug("counts :", await myInstance.count());
 
     debug(await myInstance.get(rowKey));
     debug(await myInstance.get(rowKey, "numberColumn"));
@@ -109,6 +125,9 @@ const sleep = (ms: any) => {
     debug(await myInstance.getRow(rowKey));
     await myInstance.deleteRow(rowKey);
     await myInstance.deleteRow("rowKey1");
+
+    await myInstance.deleteRow("thomas");
+    await myInstance.deleteRow("friedrich");
 
     debug("counts :", await myInstance.count());
     bigtableFactory.close();

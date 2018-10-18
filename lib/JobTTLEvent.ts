@@ -93,8 +93,10 @@ export class JobTTLEvent {
 
     const startTimestamp = Date.now();
 
+    const cleanExpiredTTLs = expiredTTLs.filter((expiredTTL) => !!expiredTTL);
+
     // Batching the delete
-    const chunksDeletions = this.arrayToChunks(expiredTTLs, this.btClient.ttlBatchSize);
+    const chunksDeletions = this.arrayToChunks(cleanExpiredTTLs, this.btClient.ttlBatchSize);
 
     for (const chunksDeletion of chunksDeletions) {
 
@@ -127,14 +129,16 @@ export class JobTTLEvent {
           key: expiredTTL.ttlKey,
         }));
 
-      if (!cellEntries || !ttlEntries) {
-        return;
-      }
+      const ttlReferenceEntries = qualifiers
+        .map((qualifier: Qualifier) => ({
+          key: `${qualifier.family}#${qualifier.row}#${qualifier.column}`,
+        }));
 
       try {
         await Promise.all([
           this.btClient.multiDelete(cellEntries),
           this.btClient.multiDelete(ttlEntries, IS_METADATA),
+          this.btClient.multiDelete(ttlReferenceEntries, IS_METADATA, this.btClient.tableTTLReference),
         ]);
       } catch (error) {
         debug(error);
@@ -157,7 +161,9 @@ export class JobTTLEvent {
    */
   private async deleteExpiredData() {
 
-    const expiredTTLs = (await this.getExpiredTTLs());
+    debug("running Job");
+
+    const expiredTTLs = await this.getExpiredTTLs();
 
     // Return early
     if (!expiredTTLs || !expiredTTLs.length) {
