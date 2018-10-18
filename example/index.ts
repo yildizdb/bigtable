@@ -132,4 +132,4 @@ const sleep = (ms: any) => {
     debug("counts :", await myInstance.count());
     bigtableFactory.close();
 
-})().catch(console.error);
+})().catch(debug);
