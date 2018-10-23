@@ -72,6 +72,8 @@ const value = "myvalue";
 await myTable.set(rowKey, value);
 await myTable.set(rowKey, value, 10, "newColumn");
 
+await myTable.ttl(rowKey);
+
 await myTable.multiSet(rowKey, {testColumn: "hello", anotherColumn: "yes"}, 5);
 
 await myTable.increase(rowKey);
