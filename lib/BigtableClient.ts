@@ -119,7 +119,6 @@ export class BigtableClient extends EventEmitter {
           data: [`${this.cfNameMetadata}:${singleRow.identifier}`],
         }));
 
-      debug(deleteMutates);
       const isMetadata = true;
       await this.multiDelete(deleteMutates, isMetadata);
     }
@@ -161,6 +160,98 @@ export class BigtableClient extends EventEmitter {
       ttlData,
       ttlReferenceData,
     };
+  }
+
+  /**
+   * Do checking on the ttl if every cell has their own ttl or it's a bulk ttl,
+   * and it will update the ttl reference table and metadata table accordingly
+   * @param insertData BulkData insert from internal Bigtable type
+   * @param ttlBulk in Seconds
+   */
+  private async upsertTTLOnBulk(insertData: BulkData[], ttlBulk?: number) {
+
+    const ttlSingleExists = insertData
+      .map((insertSingleData) => insertSingleData.ttl)
+      .filter((ttlSingle) => !!ttlSingle)
+      .length;
+
+    if (!ttlSingleExists && !ttlBulk) {
+      return;
+    }
+
+    // Preparation data
+    const insertDataFull = insertData
+      .filter((insertSingleData) => insertSingleData.ttl || ttlBulk)
+      .map((insertSingleData) => Object.assign(
+        {},
+        insertSingleData,
+        {
+          ttlKey: this.getTTLRowKey((insertSingleData.ttl || ttlBulk) as number),
+          fullQualifier: `${insertSingleData.family || this.cfName}#${insertSingleData.row}#${insertSingleData.column}`,
+        },
+      ));
+
+    // Keys to delete on ttl reference table if exist
+    const referenceKeys: string[] = insertDataFull
+      .filter((insertSingleData) => insertSingleData.ttlKey)
+      .map((insertSingleData) => insertSingleData.fullQualifier);
+
+    // Data to replace the ttl reference table data
+    const ttlReferenceData: Bigtable.TableInsertFormat[] = insertDataFull
+      .filter((insertSingleData) => insertSingleData.ttlKey)
+      .map((insertSingleData) => ({
+        key: insertSingleData.fullQualifier,
+        data: {
+          [this.cfNameTTLReference]: {
+            ttlKey: insertSingleData.ttlKey,
+          },
+        },
+      }));
+
+    // Data to be inserted as ttl row in metadata table
+    const ttlData: Bigtable.TableInsertFormat[] = insertDataFull
+      .filter((insertSingleData) => insertSingleData.ttlKey)
+      .map((insertSingleData) => ({
+        key: insertSingleData.ttlKey,
+        data: {
+          [this.cfNameMetadata]: {
+            [insertSingleData.fullQualifier]: insertSingleData.ttl || ttlBulk,
+          },
+        },
+      }));
+
+    await Promise.all([
+      this.deleteReferenceKeys(referenceKeys),
+      this.tableTTLReference.insert(ttlReferenceData),
+      this.tableMetadata.insert(ttlData),
+    ]);
+  }
+
+  /**
+   * Check if upsert of counts needs to be done on the metadata table
+   * @param insertData BulkData insert from internal Bigtable type
+   */
+  private async upsertCountOnBulk(insertData: BulkData[]) {
+
+    // Get distinct rows
+    const distinctRows = insertData
+      .map((insertSingleData) => insertSingleData.row)
+      .filter((item, pos, rowArray) => rowArray.indexOf(item) === pos);
+
+    const options = {
+      keys: distinctRows,
+    };
+    const etl = (result: any) => result.id ? true : false;
+    const distinctRowsExists = await this.scanCellsInternal(this.table, options, etl);
+
+    const distinctRowsCount = distinctRows.length;
+
+    const difference = distinctRowsCount - distinctRowsExists.length;
+    if (difference === 0) {
+      return;
+    }
+
+    await this.tableMetadata.row(COUNTS).increment(`${this.cfNameMetadata}:${COUNTS}`, difference);
   }
 
   /**
@@ -617,7 +708,7 @@ export class BigtableClient extends EventEmitter {
   }
   /**
    * Bulk insert the value into table, it should follow the custom rules of bulkInsert
-   * @param insertData
+   * @param insertData BulkData as array, take a look at Bigtable type
    */
   public async bulkInsert(insertData: BulkData[], ttl?: number) {
 
@@ -626,8 +717,6 @@ export class BigtableClient extends EventEmitter {
     }
 
     debug("Bulk insert for", insertData.length, "data");
-
-    const insertPromises = [];
 
     const insertRules = insertData
       .filter((insertSingleData) => !!insertSingleData)
@@ -640,65 +729,12 @@ export class BigtableClient extends EventEmitter {
         },
       }));
 
-    // Get distinct rows
-    const distinctRows = insertData
-      .map((insertSingleData) => insertSingleData.row)
-      .filter((item, pos, rowArray) => rowArray.indexOf(item) === pos);
-
-    const options = {
-      keys: distinctRows,
-    };
-    const etl = (result: any) => result.id ? true : false;
-    const distinctRowsExists = await this.scanCellsInternal(this.table, options, etl);
-
-    const distinctRowsCount = distinctRows.length;
-
-    if (ttl) {
-
-      const ttlRowKey = this.getTTLRowKey(ttl);
-      const ttlData: Bigtable.GenericObject = {};
-
-      const referenceKeys: string[] = insertData
-        .map((insertSingleData: BulkData) =>
-          `${insertSingleData.family || this.cfName}#${insertSingleData.row}#${insertSingleData.column}`);
-
-      const ttlReferenceData: Bigtable.TableInsertFormat[] = insertData
-        .map((insertSingleData: BulkData) => ({
-          key: `${insertSingleData.family || this.cfName}#${insertSingleData.row}#${insertSingleData.column}`,
-          data: {
-            [this.cfNameTTLReference]: {
-              ttlKey: ttlRowKey,
-            },
-          },
-        }));
-
-      insertData.forEach((insertSingleData) => {
-        const columnQualifier =
-          `${insertSingleData.family || this.cfName}#${insertSingleData.row}#${insertSingleData.column}`;
-        ttlData[columnQualifier] = ttl;
-      });
-
-      await this.deleteReferenceKeys(referenceKeys);
-
-      insertPromises.push(
-        this.tableTTLReference.insert(ttlReferenceData),
-        this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
-      );
-    }
-
-    const difference = distinctRowsCount - distinctRowsExists.length;
-    if (difference !== 0) {
-      insertPromises.push(
-        this.tableMetadata.row(COUNTS).increment(`${this.cfNameMetadata}:${COUNTS}`, difference),
-      );
-    }
-
-    insertPromises.push(
-      this.table.insert(insertRules),
-    );
-
     // Push all promises into single Promise.all
-    await Promise.all(insertPromises);
+    await Promise.all([
+      this.upsertTTLOnBulk(insertData, ttl),
+      this.upsertCountOnBulk(insertData),
+      this.table.insert(insertRules),
+    ]);
   }
 
   /**
@@ -902,7 +938,7 @@ export class BigtableClient extends EventEmitter {
     return counts || 0;
   }
 
-  public close() {
+  public close(retry?: boolean) {
 
     debug("Closing job..", this.config.name);
 

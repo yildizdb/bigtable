@@ -155,6 +155,40 @@ describe(testName, () => {
       await btClient.multiSet(rowKey, {testColumn: "hello", anotherColumn: "yes"}, 8);
       await btClient.increase(rowKey, "numberColumn", 2);
       await btClient.multiAdd(rowKey, {foo: 1, bar: -5}, 7);
+
+      await btClient.bulkInsert([
+        {
+          row: "jean-paul",
+          column: "sartre",
+          data: "france",
+          ttl: 3,
+        },
+        {
+          row: "emmanuel",
+          column: "kant",
+          data: "germany",
+        },
+        {
+          row: "baruch",
+          column: "spinoza",
+          data: "netherland",
+        },
+      ], 3);
+
+      await btClient.bulkInsert([
+        {
+          row: "jean-paul",
+          column: "sartre",
+          data: "france",
+          ttl: 4,
+        },
+        {
+          row: "emmanuel",
+          column: "kant",
+          data: "germany",
+          ttl: 7,
+        },
+      ], 6);
     });
 
     it("should wait for 4 seconds", (done) => {
@@ -163,7 +197,18 @@ describe(testName, () => {
 
     it("should be able to delete expired data based on TTL Job", async () => {
       const retrievedValue = await btClient.get(rowKey, "numberColumn");
+      const retrievedValueBulk = await btClient.get("baruch", "spinoza");
+
       assert.equal(retrievedValue, null);
+      assert.equal(retrievedValueBulk, null);
+    });
+
+    it("should be able to bump TTL on Bulk", async () => {
+      const retrievedValueBulk1 = await btClient.get("emmanuel", "kant");
+      const retrievedValueBulk2 = await btClient.get("jean-paul", "sartre");
+
+      assert.ok(retrievedValueBulk1);
+      assert.ok(retrievedValueBulk2);
     });
 
     it("should be able to emit the correct data on expiration", async () => {
@@ -175,12 +220,17 @@ describe(testName, () => {
       setTimeout(done, 4000);
     });
 
+    it("should delete the remainder data", async () => {
+      await btClient.deleteRow("newRowKey1");
+      await btClient.deleteRow("newRowKey2");
+    });
+
     it("should wait for 3 seconds", (done) => {
       setTimeout(done, 3000);
     });
 
     it("should be able to emit correct number of times", async () => {
-      assert.equal(emitCounts, 6);
+      assert.equal(emitCounts, 9);
     });
 
     it("should delete all the value based on the ttl set", async () => {

@@ -32,4 +32,5 @@ export interface BulkData {
   row: string;
   column: string;
   data: any;
+  ttl?: number;
 }

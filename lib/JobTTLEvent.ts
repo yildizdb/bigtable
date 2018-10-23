@@ -176,7 +176,7 @@ export class JobTTLEvent {
   public close() {
     if (this.tov) {
       debug("Stopping job..");
-      clearTimeout(this.tov);
+      clearTimeout(this.tov as NodeJS.Timer);
     }
   }
 }

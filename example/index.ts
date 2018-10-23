@@ -61,6 +61,7 @@ const sleep = (ms: any) => {
         row: "jean-paul",
         column: "sartre",
         data: "france",
+        ttl: 3,
       },
       {
         row: "emmanuel",
@@ -87,11 +88,13 @@ const sleep = (ms: any) => {
         row: "jean-paul",
         column: "sartre",
         data: "france",
+        ttl: 3,
       },
       {
         row: "emmanuel",
         column: "kant",
         data: "germany",
+        ttl: 7,
       },
     ], 6);
 
@@ -100,6 +103,7 @@ const sleep = (ms: any) => {
         row: "thomas",
         column: "hobbes",
         data: "england",
+        ttl: 3,
       },
       {
         row: "friedrich",
@@ -126,7 +130,9 @@ const sleep = (ms: any) => {
     await myInstance.deleteRow(rowKey);
     await myInstance.deleteRow("rowKey1");
 
-    await myInstance.deleteRow("thomas");
+    debug("waiting...");
+    await sleep(3000);
+
     await myInstance.deleteRow("friedrich");
 
     debug("counts :", await myInstance.count());
