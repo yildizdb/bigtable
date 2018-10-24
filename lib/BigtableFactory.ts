@@ -57,6 +57,8 @@ export class BigtableFactory {
       this.config.clusterCount,
       this.config.murmurSeed,
       this.config.ttlBatchSize,
+      this.config.insertBulkLimit,
+      this.config.insertBulkLimitTTL,
     );
 
     await bigtableClient.init();

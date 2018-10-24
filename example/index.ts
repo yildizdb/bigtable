@@ -75,9 +75,13 @@ const sleep = (ms: any) => {
       },
     ], 5);
 
+    debug(`TTL For ${rowKey}:`, await myInstance.ttl(rowKey, "newColumn"));
+
     await myInstance.multiSet(rowKey, {testColumn: "hello", anotherColumn: "yes"});
     await myInstance.multiSet(rowKey, {testColumn: "hello", anotherColumn: "yes"}, 5);
     await myInstance.multiSet(rowKey, {testColumn: "hello", anotherColumn: "no"}, 7);
+
+    debug(`TTL For ${rowKey}#testColumn:`, await myInstance.ttl(rowKey, "testColumn"));
 
     await myInstance.increase(rowKey, "numberColumn");
     await myInstance.increase(rowKey, "numberColumn");

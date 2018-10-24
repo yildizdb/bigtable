@@ -17,6 +17,9 @@ const DEFAULT_CLUSTER_COUNT = 3;
 const DEFAULT_MURMUR_SEED = 0;
 const DEFAULT_TTL_BATCHSIZE = 250;
 
+const DEFAULT_INSERT_BULK_LIMIT = 3500;
+const DEFAULT_INSERT_BULK_WITH_TTL_LIMIT = 1000;
+
 const DEFAULT_COLUMN = "value";
 const DEFAULT_COLUMN_FAMILY = "default";
 const COUNTS = "counts";
@@ -43,6 +46,8 @@ export class BigtableClient extends EventEmitter {
   private maxJitterMs: number;
   private isInitialized: boolean;
   private murmurSeed: number;
+  private insertBulkLimit: number;
+  private insertBulkLimitTTL: number;
 
   constructor(
     config: BigtableClientConfig,
@@ -53,6 +58,8 @@ export class BigtableClient extends EventEmitter {
     clusterCount?: number,
     murmurSeed?: number,
     ttlBatchSize?: number,
+    insertBulkLimit?: number,
+    insertBulkLimitTTL?: number,
   ) {
     super();
 
@@ -63,6 +70,8 @@ export class BigtableClient extends EventEmitter {
     this.clusterCount = clusterCount || DEFAULT_CLUSTER_COUNT;
     this.murmurSeed = murmurSeed || DEFAULT_MURMUR_SEED;
     this.ttlBatchSize = ttlBatchSize || DEFAULT_TTL_BATCHSIZE;
+    this.insertBulkLimit = insertBulkLimit || DEFAULT_INSERT_BULK_LIMIT;
+    this.insertBulkLimitTTL = insertBulkLimitTTL || DEFAULT_INSERT_BULK_WITH_TTL_LIMIT;
     this.config = config;
     this.isInitialized = false;
     this.job = new JobTTLEvent(this, this.intervalInMs);
@@ -208,8 +217,8 @@ export class BigtableClient extends EventEmitter {
         },
       }));
 
-    // Data to be inserted as ttl row in metadata table
-    const ttlData: Bigtable.TableInsertFormat[] = insertDataFull
+    // Data to be inserted as ttl row in metadata table as an reduced object to reduce the mutation
+    const ttlDataObj = insertDataFull
       .filter((insertSingleData) => insertSingleData.ttlKey)
       .map((insertSingleData) => ({
         key: insertSingleData.ttlKey,
@@ -218,6 +227,24 @@ export class BigtableClient extends EventEmitter {
             [insertSingleData.fullQualifier]: insertSingleData.ttl || ttlBulk,
           },
         },
+      }))
+      .reduce((cummulator, currObj) => {
+
+        if (!cummulator[currObj.key]) {
+          cummulator[currObj.key] = currObj.data;
+          return cummulator;
+        }
+
+        cummulator[currObj.key] = Object.assign({}, cummulator[currObj.key], currObj.data);
+        return cummulator;
+      }, {} as any);
+
+    // Return the correct schema before insertion
+    const ttlData: Bigtable.TableInsertFormat[] = Object
+      .keys(ttlDataObj)
+      .map((ttlDataKey: string) => ({
+        key: ttlDataKey,
+        data: ttlDataObj[ttlDataKey],
       }));
 
     await Promise.all([
@@ -729,6 +756,21 @@ export class BigtableClient extends EventEmitter {
         },
       }));
 
+    const insertDataWithTTLExists = insertData
+      .map((insertSingleData) => insertSingleData.ttl)
+      .filter((insertSingleData) => !!insertSingleData)
+      .length || ttl;
+
+    const insertDataLength = insertData.length;
+
+    if (insertDataLength > this.insertBulkLimit) {
+      throw new Error(`Bulk insert limit exceeded, please insert less than ${this.insertBulkLimit} cells`);
+    }
+
+    if (insertDataWithTTLExists && insertDataLength > this.insertBulkLimitTTL) {
+      throw new Error(`Bulk insert limit with TTL exceeded, please insert less than ${this.insertBulkLimitTTL} cells`);
+    }
+
     // Push all promises into single Promise.all
     await Promise.all([
       this.upsertTTLOnBulk(insertData, ttl),
@@ -936,6 +978,28 @@ export class BigtableClient extends EventEmitter {
     debug("Checking count for", this.config.name);
     const counts = await this.retrieve(this.tableMetadata, this.cfNameMetadata, COUNTS, COUNTS);
     return counts || 0;
+  }
+
+  /**
+   * Get a TTL of a cell
+   * @param rowKey
+   * @param column
+   */
+  public async ttl(rowKey: string, column?: string): Promise<any> {
+
+    const columnIdentifier = column || this.defaultColumn;
+    debug("Checking ttl for", `row: ${rowKey}`, `column: ${columnIdentifier}`);
+
+    const fullQualifier = `${this.cfName}#${rowKey}#${column}`;
+    const ttlKey = await this.retrieve(this.tableTTLReference, this.cfNameTTLReference, fullQualifier, "ttlKey");
+
+    if (!ttlKey) {
+      return -1;
+    }
+
+    const remainingTime = (Number(ttlKey.split("#")[2]) - Date.now()) / 1000;
+
+    return Number(remainingTime.toFixed());
   }
 
   public close(retry?: boolean) {

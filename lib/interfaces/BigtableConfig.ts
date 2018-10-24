@@ -8,6 +8,8 @@ export interface BigtableFactoryConfig {
   clusterCount?: number;
   murmurSeed?: number;
   ttlBatchSize?: number;
+  insertBulkLimit?: number;
+  insertBulkLimitTTL?: number;
 }
 
 export interface BigtableClientConfig {
