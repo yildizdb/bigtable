@@ -8,7 +8,7 @@
   "author": "Christian Froehlingsdorf <info@5cf.de>",
   "license": "MIT",
   "dependencies": {
-    "@google-cloud/bigtable": "~0.16.0",
+    "@google-cloud/bigtable": "~1.0.0",
     "debug": "~4.1.0",
     "murmurhash": "^0.0.2"
   },

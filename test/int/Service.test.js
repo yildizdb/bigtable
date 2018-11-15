@@ -180,13 +180,13 @@ describe(testName, () => {
           row: "jean-paul",
           column: "sartre",
           data: "france",
-          ttl: 4,
+          ttl: 7,
         },
         {
           row: "emmanuel",
           column: "kant",
           data: "germany",
-          ttl: 7,
+          ttl: 8,
         },
       ], 6);
     });

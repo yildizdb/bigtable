@@ -1,4 +1,6 @@
 /// <reference path="./lib/declarations/GoogleBigtable.d.ts"/>
 import { BigtableFactory } from "./lib/BigtableFactory";
+import { BigtableClient } from "./lib/BigtableClient";
+
 export default BigtableFactory;
-export { BigtableFactory }; // faked object export
+export { BigtableFactory, BigtableClient }; // faked object export
