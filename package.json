@@ -1,11 +1,11 @@
 {
   "name": "bigtable-client",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "Convenience wrapper, batteries included, for @google-cloud/bigtable",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "repository": "https://github.com/yildizdb/bigtable.git",
-  "author": "Christian Froehlingsdorf <info@5cf.de>",
+  "author": "Rian Josua Masikome <rjm@5cf.de>",
   "license": "MIT",
   "dependencies": {
     "@google-cloud/bigtable": "~1.0.0",
