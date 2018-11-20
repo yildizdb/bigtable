@@ -31,14 +31,6 @@ export class BigtableClient extends EventEmitter {
   private table!: Bigtable.Table;
   private cfName!: string;
   private tov!: NodeJS.Timer;
-
-  public tableMetadata!: Bigtable.Table;
-  public cfNameMetadata!: string;
-  public tableTTLReference!: Bigtable.Table;
-  public cfNameTTLReference!: string;
-  public clusterCount: number;
-  public ttlBatchSize: number;
-
   private job: JobTTLEvent;
   private defaultColumn!: string;
   private intervalInMs: number;
@@ -48,6 +40,13 @@ export class BigtableClient extends EventEmitter {
   private murmurSeed: number;
   private insertBulkLimit: number;
   private insertBulkLimitTTL: number;
+
+  public tableMetadata!: Bigtable.Table;
+  public cfNameMetadata!: string;
+  public tableTTLReference!: Bigtable.Table;
+  public cfNameTTLReference!: string;
+  public clusterCount: number;
+  public ttlBatchSize: number;
 
   constructor(
     config: BigtableClientConfig,
@@ -396,6 +395,13 @@ export class BigtableClient extends EventEmitter {
     }
 
     return result;
+  }
+
+  /**
+   * Get the current working table
+   */
+  public getTable() {
+    return this.table;
   }
 
   /**
@@ -1018,6 +1024,7 @@ export class BigtableClient extends EventEmitter {
     return Promise.all([
       this.table.delete(),
       this.tableMetadata.delete(),
+      this.tableTTLReference.delete(),
     ]);
   }
 

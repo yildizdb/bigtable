@@ -11,10 +11,12 @@ export class BigtableFactory {
   private config: BigtableFactoryConfig;
   private instance?: Bigtable.Instance;
   private instances: BigtableClient[];
+  private isInitialized: boolean;
 
   constructor(config: BigtableFactoryConfig) {
     this.config = config;
     this.instances = [];
+    this.isInitialized = false;
   }
 
   public async init() {
@@ -44,9 +46,15 @@ export class BigtableFactory {
     } else {
       debug("Instance", instanceName, "already exists.");
     }
+
+    this.isInitialized = true;
   }
 
   public async get(tableConfig: BigtableClientConfig) {
+
+    if (!this.isInitialized) {
+      throw new Error("BigtableFactory is not initialized");
+    }
 
     const bigtableClient = new BigtableClient(
       tableConfig,
