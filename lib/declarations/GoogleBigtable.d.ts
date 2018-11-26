@@ -44,6 +44,10 @@ declare module "@google-cloud/bigtable" {
 
       export interface StreamOptions {
         prefix?: string;
+        prefixes?: string[];
+        start?: string;
+        end?: string;
+        keys?: string[];
         ranges?: Array<{
           start: Buffer | string;
           end: Buffer | string;
