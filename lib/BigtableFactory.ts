@@ -7,7 +7,6 @@ import { BigtableFactoryConfig, BigtableClientConfig } from "./interfaces";
 const debug = Debug("yildiz:bigtable:factory");
 
 export class BigtableFactory {
-
   private config: BigtableFactoryConfig;
   private instance?: Bigtable.Instance;
   private instances: BigtableClient[];
@@ -19,13 +18,8 @@ export class BigtableFactory {
     this.isInitialized = false;
   }
 
-  public async init() {
-
-    const {
-      projectId,
-      keyFilename,
-      instanceName,
-    } = this.config;
+  public async init(autoCreateInstance = true) {
+    const { projectId, keyFilename, instanceName } = this.config;
 
     const bigtable = new Bigtable({
       projectId,
@@ -38,20 +32,21 @@ export class BigtableFactory {
       throw new Error("Failed to create instance " + instanceName);
     }
 
-    const instanceExists = await this.instance.exists();
-    if (!instanceExists || !instanceExists[0]) {
-      debug("Instance", instanceName, "does not exist, creating..");
-      await this.instance.create();
-      debug("Instance", instanceName, "created.");
-    } else {
-      debug("Instance", instanceName, "already exists.");
+    if (autoCreateInstance) {
+      const instanceExists = await this.instance.exists();
+      if (!instanceExists || !instanceExists[0]) {
+        debug("Instance", instanceName, "does not exist, creating..");
+        await this.instance.create();
+        debug("Instance", instanceName, "created.");
+      } else {
+        debug("Instance", instanceName, "already exists.");
+      }
     }
 
     this.isInitialized = true;
   }
 
   public async get(tableConfig: BigtableClientConfig) {
-
     if (!this.isInitialized) {
       throw new Error("BigtableFactory is not initialized");
     }
