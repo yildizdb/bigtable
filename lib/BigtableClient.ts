@@ -386,7 +386,7 @@ export class BigtableClient extends EventEmitter {
     ) {
       const rowData = rowGet[0].data[cfName];
       Object.keys(rowData).forEach((columnKey: string) => {
-        if (rowData[columnKey] && rowData[columnKey][0] && rowData[columnKey][0].value) {
+        if (rowData[columnKey] && rowData[columnKey][0]) {
           result[columnKey] = complete ?
             rowData[columnKey][0] :
             this.getParsedValue(rowData[columnKey][0].value);
