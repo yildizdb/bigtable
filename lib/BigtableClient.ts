@@ -302,8 +302,8 @@ export class BigtableClient extends EventEmitter {
     dataKeys.map((key: string) => {
 
       const value = data[key];
-      cleanedData[key] = (value !== undefined && 
-                              value !== null && 
+      cleanedData[key] = (value !== undefined &&
+                              value !== null &&
                               typeof value === "object") ?
         JSON.stringify(value) : value;
     });
