@@ -302,10 +302,10 @@ export class BigtableClient extends EventEmitter {
     dataKeys.map((key: string) => {
 
       const value = data[key];
-      const sanitizedValue = (value && typeof value === "object") ?
+      cleanedData[key] = (value !== undefined && 
+                              value !== null && 
+                              typeof value === "object") ?
         JSON.stringify(value) : value;
-
-      cleanedData[key] = sanitizedValue || "";
     });
 
     return table.insert([{
