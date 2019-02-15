@@ -29,7 +29,6 @@ export class BigtableClient extends EventEmitter {
   private config: BigtableClientConfig;
   private instance: Bigtable.Instance;
   private table!: Bigtable.Table;
-  private cfName!: string;
   private tov!: NodeJS.Timer;
   private job: JobTTLEvent;
   private defaultColumn!: string;
@@ -41,6 +40,7 @@ export class BigtableClient extends EventEmitter {
   private insertBulkLimit: number;
   private insertBulkLimitTTL: number;
 
+  public cfName!: string;
   public tableMetadata!: Bigtable.Table;
   public cfNameMetadata!: string;
   public tableTTLReference!: Bigtable.Table;

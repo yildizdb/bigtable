@@ -26,6 +26,7 @@
     "_start": "DEBUG=yildiz:bigtable:* node dist/example/index.js",
     "start": "yarn build && yarn _start",
     "lint": "tslint -c tslint.json '**/*.ts'",
+    "lint-fix": "tslint -c tslint.json '**/*.ts' --fix",
     "test": "yarn build && ./node_modules/.bin/_mocha --recursive --timeout 30000 --exit -R spec test/int",
     "test:debug": "yarn build && DEBUG=yildiz:* ./node_modules/.bin/_mocha --recursive --timeout 30000 --exit -R spec test/int"
   }
