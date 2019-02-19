@@ -317,7 +317,7 @@ export class BigtableClient extends EventEmitter {
   }
 
   /**
-   * Parsing the stored string, and return as it is if not parsable
+   * Parsing the stored string, and return the object if it is parsable as an object
    * @param value
    */
   private getParsedValue(value: string) {
@@ -330,7 +330,11 @@ export class BigtableClient extends EventEmitter {
       // Do Nothing
     }
 
-    return result;
+    if (typeof result === "object") {
+      return result;
+    }
+
+    return value;
   }
 
   /**
