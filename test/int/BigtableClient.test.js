@@ -105,6 +105,16 @@ describe(testName, () => {
     assert.deepStrictEqual(retrievedValue, value);
   });
 
+  it("should be able to set an array", async () => {
+    const rowKey = "anArrayRowKey";
+    const column = "arrayColumn"
+    const value = ["a", 1]
+    await btClient.set(rowKey, value, undefined, column);
+    const retrievedValue = await btClient.get(rowKey, column);
+
+    assert.deepStrictEqual(retrievedValue, value);
+  });
+
   it("should be able to do simple set on specified column", async () => {
     const rowKey = "anotherRowKey";
     const value = "string value in new column"
