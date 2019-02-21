@@ -15,8 +15,8 @@
     "declarationMap": true
   },
   "exclude": [
-    "./coverage",
-    "./node_modules",
-    "./dist"
+    "./coverage/*",
+    "./node_modules/*",
+    "./dist/*"
   ]
 }
