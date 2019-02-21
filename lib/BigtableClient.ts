@@ -65,7 +65,7 @@ export class BigtableClient extends EventEmitter {
     this.instance = instance;
     this.intervalInMs = intervalInMs || DEFAULT_TTL_SCAN_INTERVAL_MS;
     this.minJitterMs = minJitterMs || DEFAULT_MIN_JITTER_MS;
-    this.maxJitterMs = maxJitterMs || DEFAULT_MAX_JITTER_MS;
+    this.maxJitterMs = maxJitterMs || DEFAULT_MAX_JITTER_MS;
     this.clusterCount = clusterCount || DEFAULT_CLUSTER_COUNT;
     this.murmurSeed = murmurSeed || DEFAULT_MURMUR_SEED;
     this.ttlBatchSize = ttlBatchSize || DEFAULT_TTL_BATCHSIZE;
@@ -122,7 +122,7 @@ export class BigtableClient extends EventEmitter {
     // Create a mutate rules based on the array returned
     if (ttlReferenceRow && ttlReferenceRow.length) {
       const deleteMutates = ttlReferenceRow
-        .map((singleRow: {identifier: string; ttlKey: string; }) => ({
+        .map((singleRow: { identifier: string; ttlKey: string; }) => ({
           key: singleRow.ttlKey,
           data: [`${this.cfNameMetadata}:${singleRow.identifier}`],
         }));
@@ -303,8 +303,8 @@ export class BigtableClient extends EventEmitter {
 
       const value = data[key];
       cleanedData[key] = (value !== undefined &&
-                              value !== null &&
-                              typeof value === "object") ?
+        value !== null &&
+        typeof value === "object") ?
         JSON.stringify(value) : value;
     });
 
@@ -426,21 +426,21 @@ export class BigtableClient extends EventEmitter {
       const results: Bigtable.GenericObject[] = [];
 
       table.createReadStream(options)
-      .on("error", (error: Error) => {
-        reject(error);
-      })
-      .on("data", (result: Bigtable.GenericObject) => {
-        if (etl) {
-          if (etl(result)) {
-            results.push(etl(result));
+        .on("error", (error: Error) => {
+          reject(error);
+        })
+        .on("data", (result: Bigtable.GenericObject) => {
+          if (etl) {
+            if (etl(result)) {
+              results.push(etl(result));
+            }
+          } else {
+            results.push(result);
           }
-        } else {
-          results.push(result);
-        }
-      })
-      .on("end", () => {
-        resolve(results);
-      });
+        })
+        .on("end", () => {
+          resolve(results);
+        });
     });
   }
 
@@ -634,11 +634,11 @@ export class BigtableClient extends EventEmitter {
       }
 
       const ttlData = {
-        [columnQualifier] : ttl,
+        [columnQualifier]: ttl,
       };
 
       insertPromises.push(
-        this.insert(this.tableTTLReference, this.cfNameTTLReference, columnQualifier, {ttlKey: ttlRowKey}),
+        this.insert(this.tableTTLReference, this.cfNameTTLReference, columnQualifier, { ttlKey: ttlRowKey }),
         this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
       );
     }
@@ -739,8 +739,8 @@ export class BigtableClient extends EventEmitter {
 
     const rowExists = await this.table.row(rowKey + "").exists();
     if (!rowExists || !rowExists[0]) {
-        await this.tableMetadata.row(COUNTS)
-          .increment(`${this.cfNameMetadata}:${COUNTS}`, -1);
+      await this.tableMetadata.row(COUNTS)
+        .increment(`${this.cfNameMetadata}:${COUNTS}`, -1);
     }
   }
   /**
@@ -899,11 +899,11 @@ export class BigtableClient extends EventEmitter {
       }
 
       const ttlData = {
-        [columnQualifier] : ttl,
+        [columnQualifier]: ttl,
       };
 
       insertPromises.push(
-        this.insert(this.tableTTLReference, this.cfNameTTLReference, columnQualifier, {ttlKey: ttlRowKey}),
+        this.insert(this.tableTTLReference, this.cfNameTTLReference, columnQualifier, { ttlKey: ttlRowKey }),
         this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
       );
     }
@@ -957,11 +957,11 @@ export class BigtableClient extends EventEmitter {
       }
 
       const ttlData = {
-        [columnQualifier] : ttl,
+        [columnQualifier]: ttl,
       };
 
       insertPromises.push(
-        this.insert(this.tableTTLReference, this.cfNameTTLReference, columnQualifier, {ttlKey: ttlRowKey}),
+        this.insert(this.tableTTLReference, this.cfNameTTLReference, columnQualifier, { ttlKey: ttlRowKey }),
         this.insert(this.tableMetadata, this.cfNameMetadata, ttlRowKey, ttlData),
       );
     }

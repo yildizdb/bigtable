@@ -27,8 +27,7 @@ const waitForSeconds = async (seconds) => await new Promise(resolve => setTimeou
 
 let btClient = null;
 
-let expiredData = {};
-let emitCounts = 0;
+let expiredData = [];
 
 let emulatorProcess;
 
@@ -60,8 +59,7 @@ describe(testName, () => {
     await btFactory.init(false);
     btClient = await btFactory.get(configClient);
     btClient.on("expired", (data) => {
-      expiredData = data;
-      emitCounts++;
+      expiredData.push(data);
     })
   });
 
@@ -174,137 +172,108 @@ describe(testName, () => {
   });
 
   it("should be able to set a TTL on a single cell", async () => {
+    expiredData = [];
     const rowKey = "singleCellTTLRowKey";
     const column = "ttlColumn";
     const value = "to be deleted";
 
-    await btClient.set(rowKey, value, 3, column);
+    await btClient.set(rowKey, value, 1, column);
     const resultBeforeTTL = await btClient.get(rowKey, column);
-    await waitForSeconds(5);
+    await waitForSeconds(2);
     const resultAfterTTL = await btClient.get(rowKey, column);
 
     assert.equal(resultBeforeTTL, value);
     assert.equal(resultAfterTTL, null);
+    assert.equal(expiredData.length, 1);
+    assert.deepEqual(expiredData, [{row: rowKey, column}])
   });
 
-  it.only("should be able to set a TTL during a multi set", async () => {
+  it("should be able to set a TTL during a multi add", async () => {
+    const rowKey = "mutliAddTTLRowKey";
+    const ttlColumns = {deleteMe: "yes", deleteMeToo: "please"};
+
+    await btClient.multiAdd(rowKey, ttlColumns, 1);
+    await waitForSeconds(2);
+
+    const result = await btClient.getRow(rowKey);
+    assert.deepEqual(result, null);
+  });
+
+  it("should be able to set a TTL during a multi set", async () => {
     const rowKey = "mutliSetTTLRowKey";
     const column = "noTTLColumn";
     const value = "not to be deleted";
     const ttlColumns = {deleteMe: "yes", deleteMeToo: "please"};
 
-    btClient.on("expired", ({row, column}) => {
-      console.log({row, column});
-    });
-
     await btClient.set(rowKey, value, undefined, column);
-    const ttl1 = await btClient.ttl(rowKey, column);
-    console.log({ttl1});
-    await btClient.multiSet(rowKey, ttlColumns, 3);
+    await btClient.multiSet(rowKey, ttlColumns, 1);
+    await waitForSeconds(2);
 
-    const ttl2 = await btClient.ttl(rowKey, column);
-    console.log({ttl2});
-    const ttl3 = await btClient.ttl(rowKey, "deleteMe");
-    console.log({ttl3});
-    await waitForSeconds(5);
     const result = await btClient.getRow(rowKey);
-    const result2 = await btClient.get(rowKey, column);
-    console.log(result2);
-
     assert.deepEqual(result, {[column]: value});
   });
 
-  it.skip("should be able to set TTL on various cases", async () => {
+  it("should not emit an already deleted cell when expired", async () => {
+    expiredData = [];
+    const rowKey = "deletedBeforeTTLRowKey";
+    const ttlColumn = "deleteMeAfterTTL"
+    const columnToBeDeletedEarly = "deleteMeEarly";
+    const ttlColumns = {[ttlColumn]: "yes", [columnToBeDeletedEarly]: "dont tell anyone"};
 
-    await btClient.set(rowKey, value, 9, "newColumn");
-    await btClient.multiSet(rowKey, {testColumn: "hello", anotherColumn: "yes"}, 8);
-    await btClient.increase(rowKey, "numberColumn", 2);
-    await btClient.multiAdd(rowKey, {foo: 1, bar: -5}, 7);
+    await btClient.multiSet(rowKey, ttlColumns, 1);
+    await btClient.delete(rowKey, columnToBeDeletedEarly);
+    await waitForSeconds(2);
+
+    assert.deepEqual(expiredData[0], {row: rowKey, column: ttlColumn});
+    assert.equal(expiredData.length, 1);
+  });
+
+  it("should be able to set a TTL during an increase", async () => {
+    const rowKey = "increaseTTLColumn";
+    const column = "numberColumn";
+
+    await btClient.increase(rowKey, column, 1);
+    await waitForSeconds(2);
+
+    const result = await btClient.get(rowKey, column);
+
+    assert.equal(result, null);
+  });
+
+  it("should be able to set a TTL during a bulk insert", async () => {
+    const rowKey = "bulkInsertTTLColumn";
+    const earlierColumn = "sartre";
+    const laterColumn = "kant";
+    const laterColumValue = "germany"
 
     await btClient.bulkInsert([
       {
-        row: "jean-paul",
-        column: "sartre",
+        row: rowKey,
+        column: earlierColumn,
         data: "france",
-        ttl: 3,
+        ttl: 1,
       },
       {
-        row: "emmanuel",
-        column: "kant",
-        data: "germany",
-      },
-      {
-        row: "baruch",
-        column: "spinoza",
-        data: "netherland",
+        row: rowKey,
+        column: laterColumn,
+        data: laterColumValue,
       },
     ], 3);
+    await waitForSeconds(2);
 
-    await btClient.bulkInsert([
-      {
-        row: "jean-paul",
-        column: "sartre",
-        data: "france",
-        ttl: 7,
-      },
-      {
-        row: "emmanuel",
-        column: "kant",
-        data: "germany",
-        ttl: 8,
-      },
-    ], 6);
+    const earlierColumnAfterTTL = await btClient.get(rowKey, earlierColumn);
+    const laterColumnBeforeTTL = await btClient.get(rowKey, laterColumn);
+
+    await waitForSeconds(2);
+
+    const laterColumnAfterTTL = await btClient.get(rowKey, laterColumn);
+
+    assert.equal(earlierColumnAfterTTL, null);
+    assert.equal(laterColumnBeforeTTL, laterColumValue);
+    assert.equal(laterColumnAfterTTL, null);
   });
 
-  it.skip("should wait for 4 seconds", (done) => {
-    setTimeout(done, 4000);
-  });
-
-  it.skip("should be able to delete expired data based on TTL Job", async () => {
-    const retrievedValue = await btClient.get(rowKey, "numberColumn");
-    const retrievedValueBulk = await btClient.get("baruch", "spinoza");
-
-    assert.equal(retrievedValue, null);
-    assert.equal(retrievedValueBulk, null);
-  });
-
-  it.skip("should be able to bump TTL on Bulk", async () => {
-    const retrievedValueBulk1 = await btClient.get("emmanuel", "kant");
-    const retrievedValueBulk2 = await btClient.get("jean-paul", "sartre");
-
-    assert.ok(retrievedValueBulk1);
-    assert.ok(retrievedValueBulk2);
-  });
-
-  it.skip("should be able to emit the correct data on expiration", async () => {
-    assert.ok(expiredData.row);
-    assert.ok(expiredData.column);
-  });
-
-  it.skip("should wait for 4 seconds", (done) => {
-    setTimeout(done, 4000);
-  });
-
-  it.skip("should delete the remainder data", async () => {
-    await btClient.deleteRow("newRowKey1");
-    await btClient.deleteRow("newRowKey2");
-  });
-
-  it.skip("should wait for 3 seconds", (done) => {
-    setTimeout(done, 3000);
-  });
-
-  it.skip("should be able to emit correct number of times", async () => {
-    assert.equal(emitCounts, 9);
-  });
-
-  it.skip("should delete all the value based on the ttl set", async () => {
-    const retrievedObject = await btClient.getRow(rowKey);
-
-    assert.equal(retrievedObject, null);
-  });
-
-  it.skip("should be able to do clean up", async () => {
+  it("should be able to clean up", async () => {
 
     btClient.close();
     await btClient.cleanUp();

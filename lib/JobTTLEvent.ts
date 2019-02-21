@@ -1,6 +1,5 @@
 import { BigtableClient } from "./BigtableClient";
 import * as Debug from "debug";
-import { GenericObject } from "@google-cloud/bigtable";
 
 const debug = Debug("yildiz:bigtable:jobttl");
 const IS_METADATA = true;
@@ -31,8 +30,8 @@ export class JobTTLEvent {
 
     const result: ExpiredTTL[][] = [];
     for (let i = 0; i < array.length; i += size) {
-        const chunk = array.slice(i, i + size);
-        result.push(chunk);
+      const chunk = array.slice(i, i + size);
+      result.push(chunk);
     }
     return result;
   }
@@ -90,29 +89,35 @@ export class JobTTLEvent {
    * Get the qualifiers that are still valid, in that case we don't have to delete it
    * and emit the delete event
    */
-  private async getValidRows(qualifiers: Qualifier[]): Promise<Qualifier[][] | null> {
+  private async getValidQualifiers(qualifiers: Qualifier[]): Promise<Qualifier[]> {
 
     const startTimestamp = Date.now();
 
-    const validRows = await this.btClient
+    const rawValidQualifiers = await this.btClient
       .scanCellsInternal(
         this.btClient.getTable(),
         {
-          keys: qualifiers
-            .map((qualifier) => qualifier.row),
+          keys: qualifiers.map((qualifier) => qualifier.row),
+          filter: {
+            column: qualifiers.map((qualifier) => qualifier.column),
+          },
         },
         (result: any) =>
           Object.keys(result
             .data[this.btClient.cfName])
-          .map((column: string) => ({
-            family: this.btClient.cfName,
-            row: result.id,
-            column,
-          })),
-        );
+            .map((column: string) => ({
+              family: this.btClient.cfName,
+              row: result.id,
+              column,
+            })),
+      );
 
     debug(`Range scan calls takes ${Date.now() - startTimestamp} ms`);
-    return validRows;
+    const validQualifiers: Qualifier[] = rawValidQualifiers ?
+      ([] as Qualifier[]).concat(...rawValidQualifiers)
+      : [];
+
+    return validQualifiers;
   }
 
   /**
@@ -135,27 +140,24 @@ export class JobTTLEvent {
         .concat(
           ...chunksDeletion
             .map((expiredTTL: ExpiredTTL) => expiredTTL.cellQualifiers),
-          )
+        )
         .map((qualifier: string) => {
           const splitQualifiers = qualifier.split("#");
           return {
             family: splitQualifiers[0],
-            row : splitQualifiers[1],
+            row: splitQualifiers[1],
             column: splitQualifiers[2],
           };
         });
 
-      const rawValidQualifiers = await this.getValidRows(qualifiers);
-      const validQualifiers: Qualifier[] = rawValidQualifiers ?
-        ([] as Qualifier[]).concat(...rawValidQualifiers)
-        : [];
+      const validQualifiers = await this.getValidQualifiers(qualifiers);
 
       const cellEntries = validQualifiers.length ?
         validQualifiers
-        .map((qualifier: Qualifier) => ({
-          key: qualifier.row,
-          data: [ `${qualifier.family}:${qualifier.column}`],
-        })) : [];
+          .map((qualifier: Qualifier) => ({
+            key: qualifier.row,
+            data: [`${qualifier.family}:${qualifier.column}`],
+          })) : [];
 
       const ttlEntries = chunksDeletion
         .map((expiredTTL: ExpiredTTL) => ({
