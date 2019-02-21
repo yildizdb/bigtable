@@ -67,13 +67,42 @@ describe(testName, () => {
     btClient.close();
   });
 
-  it("should be able to do simple set on a client", async () => {
+  it("should be able to set a string", async () => {
     const rowKey = "aRowKey";
     const value = "a string value"
     await btClient.set(rowKey, value);
     const retrievedValue = await btClient.get(rowKey);
 
-    assert.equal(retrievedValue, value);
+    assert.strictEqual(retrievedValue, value);
+  });
+
+  it("should be able to set a number", async () => {
+    const rowKey = "aNumberRowKey";
+    const value = 10
+    await btClient.set(rowKey, value);
+    const retrievedValue = await btClient.get(rowKey);
+
+    assert.strictEqual(retrievedValue, value);
+  });
+
+  it("should be able to set a number in a string", async () => {
+    const rowKey = "aNumberStringRowKey";
+    const value = "1.0"
+    await btClient.set(rowKey, value);
+    const retrievedValue = await btClient.get(rowKey);
+
+    assert.strictEqual(retrievedValue, value);
+  });
+
+
+  it("should be able to set an object", async () => {
+    const rowKey = "anObjectRowKey";
+    const column = "objectColumn"
+    const value = {an: "object"}
+    await btClient.set(rowKey, value, undefined, column);
+    const retrievedValue = await btClient.get(rowKey, column);
+
+    assert.deepStrictEqual(retrievedValue, value);
   });
 
   it("should be able to do simple set on specified column", async () => {
@@ -84,7 +113,7 @@ describe(testName, () => {
     await btClient.set(rowKey, value, null, newColumn);
     const retrievedValue = await btClient.get(rowKey, newColumn);
 
-    assert.equal(retrievedValue, value);
+    assert.strictEqual(retrievedValue, value);
   });
 
   it("should be able to do a multiset", async () => {
@@ -105,7 +134,7 @@ describe(testName, () => {
 
     const retrievedValue = await btClient.get(rowKey, numberColumn);
 
-    assert.equal(retrievedValue, 2);
+    assert.strictEqual(retrievedValue, 2);
   });
 
   it("should be able to do decrease", async () => {
@@ -116,7 +145,7 @@ describe(testName, () => {
 
     const retrievedValue = await btClient.get(rowKey, numberColumn);
 
-    assert.equal(retrievedValue, -2);
+    assert.strictEqual(retrievedValue, -2);
   });
 
   it("should be able to do additional integer operation per row", async () => {
@@ -127,18 +156,18 @@ describe(testName, () => {
 
     const retrievedObject = await btClient.getRow(rowKey);
 
-    assert.equal(retrievedObject.foo, 1);
-    assert.equal(retrievedObject.bar, 10);
+    assert.strictEqual(retrievedObject.foo, 1);
+    assert.strictEqual(retrievedObject.bar, 10);
   });
 
   it("should be able to count", async () => {
     await btClient.set("countRowKey", "dummy value");
     const retrievedValue = await btClient.count();
 
-    assert.equal(retrievedValue >= 1, true);
+    assert.strictEqual(retrievedValue >= 1, true);
     await btClient.set("anotherCountRowKey", "another dummy value");
     const updatedValue = await btClient.count();
-    assert.equal(updatedValue, retrievedValue + 1);
+    assert.strictEqual(updatedValue, retrievedValue + 1);
   });
 
   it("should be able to delete as single cell", async () => {
@@ -149,7 +178,7 @@ describe(testName, () => {
 
     await btClient.delete(rowKey, columnToBeDeleted);
     const retrievedValue = await btClient.get(rowKey, columnToBeDeleted);
-    assert.equal(retrievedValue, null);
+    assert.strictEqual(retrievedValue, null);
 
     const retrievedRow = await btClient.getRow(rowKey);
     assert.deepEqual(retrievedRow, {doNotDeleteMe: "please"});
@@ -167,8 +196,8 @@ describe(testName, () => {
 
     const retrievedValueAfter = await btClient.count();
 
-    assert.equal(retrievedObject, null);
-    assert.equal(retrievedValueAfter, retrievedValueBefore - 1);
+    assert.strictEqual(retrievedObject, null);
+    assert.strictEqual(retrievedValueAfter, retrievedValueBefore - 1);
   });
 
   it("should be able to set a TTL on a single cell", async () => {
@@ -182,9 +211,9 @@ describe(testName, () => {
     await waitForSeconds(2);
     const resultAfterTTL = await btClient.get(rowKey, column);
 
-    assert.equal(resultBeforeTTL, value);
-    assert.equal(resultAfterTTL, null);
-    assert.equal(expiredData.length, 1);
+    assert.strictEqual(resultBeforeTTL, value);
+    assert.strictEqual(resultAfterTTL, null);
+    assert.strictEqual(expiredData.length, 1);
     assert.deepEqual(expiredData, [{row: rowKey, column}])
   });
 
@@ -225,7 +254,7 @@ describe(testName, () => {
     await waitForSeconds(2);
 
     assert.deepEqual(expiredData[0], {row: rowKey, column: ttlColumn});
-    assert.equal(expiredData.length, 1);
+    assert.strictEqual(expiredData.length, 1);
   });
 
   it("should be able to set a TTL during an increase", async () => {
@@ -237,7 +266,7 @@ describe(testName, () => {
 
     const result = await btClient.get(rowKey, column);
 
-    assert.equal(result, null);
+    assert.strictEqual(result, null);
   });
 
   it("should be able to set a TTL during a bulk insert", async () => {
@@ -268,9 +297,9 @@ describe(testName, () => {
 
     const laterColumnAfterTTL = await btClient.get(rowKey, laterColumn);
 
-    assert.equal(earlierColumnAfterTTL, null);
-    assert.equal(laterColumnBeforeTTL, laterColumValue);
-    assert.equal(laterColumnAfterTTL, null);
+    assert.strictEqual(earlierColumnAfterTTL, null);
+    assert.strictEqual(laterColumnBeforeTTL, laterColumValue);
+    assert.strictEqual(laterColumnAfterTTL, null);
   });
 
   it("should be able to clean up", async () => {

@@ -379,7 +379,7 @@ export class BigtableClient extends EventEmitter {
         rowGet[0][cfName][columnName] &&
         rowGet[0][cfName][columnName][0];
 
-      return complete ? singleResult : singleResult.value;
+      return complete ? singleResult : this.getParsedValue(singleResult.value);
     }
 
     if (
