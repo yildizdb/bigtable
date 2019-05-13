@@ -304,7 +304,8 @@ export class BigtableClient extends EventEmitter {
       const value = data[key];
       cleanedData[key] = (value !== undefined &&
         value !== null &&
-        typeof value === "object") ?
+        typeof value === "object" &&
+        !Buffer.isBuffer(value)) ?
         JSON.stringify(value) : value;
     });
 
@@ -609,7 +610,7 @@ export class BigtableClient extends EventEmitter {
    * @param ttl in Seconds
    * @param column
    */
-  public async set(rowKey: string, value: string | number, ttl?: number, column?: string): Promise<any> {
+  public async set(rowKey: string, value: string | number | Buffer, ttl?: number, column?: string): Promise<any> {
 
     debug("Setting cell for", this.config.name, rowKey, column, value, ttl);
     const columnName = column ? column : this.defaultColumn;
