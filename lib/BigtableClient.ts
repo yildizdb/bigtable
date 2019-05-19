@@ -359,7 +359,8 @@ export class BigtableClient extends EventEmitter {
     let rowGet = null;
 
     try {
-      rowGet = await row.get(identifier ? [identifier] : undefined);
+      const filter = [{ column: { cellLimit: 1 } }];
+      rowGet = await row.get(identifier ? [identifier] : undefined, { filter });
     } catch (error) {
 
       if (!error.message.startsWith("Unknown row")) {
