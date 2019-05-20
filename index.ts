@@ -4,3 +4,4 @@ import { BigtableClient } from "./lib/BigtableClient";
 
 export default BigtableFactory;
 export { BigtableFactory, BigtableClient }; // faked object export
+export { BigtableFactoryConfig, BigtableClientConfig } from "./lib/interfaces/BigtableConfig";
