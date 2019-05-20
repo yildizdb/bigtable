@@ -351,7 +351,15 @@ export class BigtableClient extends EventEmitter {
     }
 
     const columnName = column ? column || this.defaultColumn : null;
-    const identifier = columnName ? `${cfName}:${columnName}` : undefined;
+    const filter = columnName ? [
+      {
+        column: {
+          family: cfName,
+          name: columnName,
+          cellLimit: 1,
+        },
+      },
+    ] : undefined;
 
     const row = table.row(rowKey + "");
 
@@ -359,7 +367,7 @@ export class BigtableClient extends EventEmitter {
     let rowGet = null;
 
     try {
-      rowGet = await row.get(identifier ? [identifier] : undefined);
+      rowGet = await row.get(filter ? {filter} : undefined);
     } catch (error) {
 
       if (!error.message.startsWith("Unknown row")) {
@@ -376,15 +384,16 @@ export class BigtableClient extends EventEmitter {
 
     if (rowGet && columnName) {
       const singleResult = rowGet[0] &&
-        rowGet[0][cfName] &&
-        rowGet[0][cfName][columnName] &&
-        rowGet[0][cfName][columnName][0];
+        rowGet[0].data &&
+        rowGet[0].data[cfName] &&
+        rowGet[0].data[cfName][columnName] &&
+        rowGet[0].data[cfName][columnName][0] &&
+        rowGet[0].data[cfName][columnName][0].value;
 
-      return complete ? singleResult : this.getParsedValue(singleResult.value);
+      return complete ? singleResult : this.getParsedValue(singleResult);
     }
 
     if (
-      rowGet &&
       rowGet[0] &&
       rowGet[0].data &&
       rowGet[0].data[cfName]

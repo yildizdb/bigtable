@@ -84,7 +84,7 @@ declare module "@google-cloud/bigtable" {
 
       export interface Row {
         create: (data: GenericObject) => Promise<void>;
-        get: (cell?: string | string[]) => any;
+        get: (cell?: string | string[] | GenericObject) => any;
         increment: (key: string, count?: number) => Promise<void>;
         save: (data: GenericObject) => Promise<void>;
         delete: () => Promise<void>;
