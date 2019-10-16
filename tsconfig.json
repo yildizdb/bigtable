@@ -14,9 +14,8 @@
     "declaration": true,
     "declarationMap": true
   },
-  "exclude": [
-    "./coverage/*",
-    "./node_modules/*",
-    "./dist/*"
+  "include": [
+    "index.ts",
+    "./lib/**.*.ts"
   ]
 }

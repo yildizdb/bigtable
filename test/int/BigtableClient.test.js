@@ -23,9 +23,19 @@ const configClient = {
   maxVersions: 1,
 };
 
+const configClientNoCount = {
+  name: "mytableNoCount",
+  columnFamily: "myfamily",
+  defaultColumn: "default",
+  defaultValue: "",
+  maxVersions: 1,
+  enableCount: false,
+};
+
 const waitForSeconds = async (seconds) => await new Promise(resolve => setTimeout(resolve, seconds * 1000));
 
 let btClient = null;
+let btClientNoCount = null;
 
 let expiredData = [];
 
@@ -57,10 +67,13 @@ describe(testName, () => {
   before(async () => {
     const btFactory = new BigtableFactory(config);
     await btFactory.init(false);
-    btClient = await btFactory.get(configClient);
+    [btClient, btClientNoCount] = await Promise.all([
+      btFactory.get(configClient),
+      btFactory.get(configClientNoCount),
+    ]);
     btClient.on("expired", (data) => {
       expiredData.push(data);
-    })
+    });
   });
 
   after(() => {
@@ -178,6 +191,44 @@ describe(testName, () => {
     await btClient.set("anotherCountRowKey", "another dummy value");
     const updatedValue = await btClient.count();
     assert.strictEqual(updatedValue, retrievedValue + 1);
+  });
+
+  it("should NOT be able to count on non Count table", async () => {
+
+    await btClientNoCount.set("countRowKey", "dummy value");
+
+    const rowKey = "intOpsNumberRowKey";
+    await btClientNoCount.multiAdd(rowKey, {foo: 3, bar: 2});
+    await btClientNoCount.multiAdd(rowKey, {foo: -2, bar: 8});
+
+    const rowKeyMS = "multiSetRowKey";
+    const columnsObject = {firstColumn: "yeah", secondColumn: "this works"};
+    await btClientNoCount.multiSet(rowKeyMS, columnsObject);
+
+    const retrievedValue = await btClientNoCount.count();
+    assert.strictEqual(retrievedValue , 0);
+
+    const rowKeyBI = "bulkInsertTTLColumn";
+    const earlierColumn = "sartre";
+    const laterColumn = "kant";
+    const laterColumValue = "germany"
+    await btClientNoCount.bulkInsert([
+      {
+        row: rowKeyBI,
+        column: earlierColumn,
+        data: "france",
+        ttl: 1,
+      },
+      {
+        row: rowKeyBI,
+        column: laterColumn,
+        data: laterColumValue,
+      },
+    ], 3);
+    await btClientNoCount.set("anotherCountRowKey", "another dummy value");
+    const updatedValue = await btClientNoCount.count();
+
+    assert.strictEqual(updatedValue, 0);
   });
 
   it("should be able to delete as single cell", async () => {

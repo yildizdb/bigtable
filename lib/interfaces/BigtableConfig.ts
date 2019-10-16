@@ -19,6 +19,7 @@ export interface BigtableClientConfig {
   defaultValue?: string;
   maxVersions?: number;
   maxAgeSecond?: number;
+  enableCount?: boolean;
 }
 
 export interface RuleColumnFamily {
